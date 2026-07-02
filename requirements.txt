@@ -1,0 +1,12 @@
+pandas
+numpy
+sqlalchemy
+openpyxl
+scikit-learn
+matplotlib
+networkx
+scipy
+pydantic
+rich
+tqdm
+PySide6

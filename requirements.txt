@@ -10,3 +10,4 @@ pydantic
 rich
 tqdm
 PySide6
+pytest

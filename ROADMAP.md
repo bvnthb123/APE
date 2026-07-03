@@ -8,27 +8,19 @@ Status: Completed in v0.1.1
 ### M2 - Database Layer
 Status: Completed in v0.2.0
 
-Delivered:
-- SQLite and SQLAlchemy.
-- Seven core tables.
-- Transaction manager and health check.
-- Repository Pattern foundation.
-- Database tests.
-
 ### M3 - Excel Importer & Data Validation
-Status: Next
+Status: Completed in v0.3.0
 
-Scope:
-- Read the historical Excel file.
-- Detect date, weekday and number columns.
-- Parse several number separators.
-- Validate exactly six unique values from 01 to 45.
-- Detect duplicate dates and invalid rows.
-- Import using upsert behavior.
-- Return a detailed import report.
+Delivered:
+- Excel sheet and column detection.
+- Date and six-number normalization.
+- Duplicate, range and weekday validation.
+- Validation report.
+- SQLite upsert import.
+- Importer tests.
 
 ### M4 - Statistics & Data Audit
-Status: Pending
+Status: Next
 
 ### M5 - Feature Factory v1
 Status: Pending

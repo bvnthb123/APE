@@ -1,4 +1,4 @@
-"""APE command-line entry point."""
+"""APE command-line and desktop entry point."""
 
 from __future__ import annotations
 
@@ -16,6 +16,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="Adaptive Prediction Engine",
     )
     subparsers = parser.add_subparsers(dest="command")
+
+    subparsers.add_parser(
+        "gui",
+        help="Mở giao diện desktop.",
+    )
+    subparsers.add_parser(
+        "status",
+        help="Hiển thị trạng thái hệ thống trong CMD.",
+    )
 
     validate_parser = subparsers.add_parser(
         "validate",
@@ -62,7 +71,7 @@ def print_status(app: APEApplication) -> None:
     print("APE - Adaptive Prediction Engine")
     print("Version :", summary["version"])
     print("Build   :", summary["build"])
-    print("Status  : Statistics & Data Audit Ready")
+    print("Status  : Desktop GUI Ready")
     print("====================================================\n")
 
     for key, value in summary.items():
@@ -94,8 +103,23 @@ def print_analysis(report) -> None:
     print("================================================\n")
 
 
+def launch_gui() -> int:
+    try:
+        from ape.gui import run_gui
+    except ImportError as exc:
+        print("Không thể khởi động giao diện APE.")
+        print("Hãy chạy: py -m pip install -r requirements.txt")
+        print(f"Chi tiết: {exc}")
+        return 1
+    return run_gui()
+
+
 def main() -> int:
     args = build_parser().parse_args()
+
+    if args.command in {None, "gui"}:
+        return launch_gui()
+
     app = APEApplication()
     app.start()
 

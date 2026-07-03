@@ -14,25 +14,33 @@ Status: Completed in v0.3.0
 ### M4 - Statistics & Data Audit
 Status: Completed in v0.4.0
 
-Delivered:
-- Descriptive metrics for values 01-45.
-- Occurrence-distance analysis.
-- Pair and triple co-occurrence counts.
-- Structural distributions.
-- Time-based summaries.
-- Data-quality audit.
-- Command-line analysis and tests.
+## Sprint 2 - Desktop Application
 
-### M5 - Feature Factory v1
+### Sprint 2.1 - Desktop GUI
+Status: Completed in v0.5.0
+
+Delivered:
+- PySide6 desktop window.
+- Excel selection, validation and import.
+- Overview dashboard.
+- Historical data table.
+- Statistics and data-audit workspace.
+- Default GUI startup from `main.py`.
+
+### Sprint 2.2 - Report Export & Charts
 Status: Next
 
 Planned scope:
-- Frequency-window features.
-- Distance and recency features.
-- Pair and triple context features.
-- Weekday and calendar features.
-- Structural features for each historical row.
-- Versioned feature storage in SQLite.
+- Export current data and statistics to Excel.
+- Export summary report to PDF.
+- Frequency and structure charts.
+- Date-range filtering.
+- Save user interface preferences.
 
-## Sprint 2 - GUI
+### Sprint 2.3 - Windows Packaging
 Status: Pending
+
+Planned scope:
+- Build a standalone Windows executable.
+- Add application icon and version metadata.
+- Create a portable release package.

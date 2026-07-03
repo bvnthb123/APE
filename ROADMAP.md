@@ -11,19 +11,28 @@ Status: Completed in v0.2.0
 ### M3 - Excel Importer & Data Validation
 Status: Completed in v0.3.0
 
-Delivered:
-- Excel sheet and column detection.
-- Date and six-number normalization.
-- Duplicate, range and weekday validation.
-- Validation report.
-- SQLite upsert import.
-- Importer tests.
-
 ### M4 - Statistics & Data Audit
-Status: Next
+Status: Completed in v0.4.0
+
+Delivered:
+- Descriptive metrics for values 01-45.
+- Occurrence-distance analysis.
+- Pair and triple co-occurrence counts.
+- Structural distributions.
+- Time-based summaries.
+- Data-quality audit.
+- Command-line analysis and tests.
 
 ### M5 - Feature Factory v1
-Status: Pending
+Status: Next
+
+Planned scope:
+- Frequency-window features.
+- Distance and recency features.
+- Pair and triple context features.
+- Weekday and calendar features.
+- Structural features for each historical row.
+- Versioned feature storage in SQLite.
 
 ## Sprint 2 - GUI
 Status: Pending

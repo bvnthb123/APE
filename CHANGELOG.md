@@ -1,26 +1,37 @@
 # CHANGELOG
 
+## v0.5.0 - Desktop GUI
+
+### Added
+- PySide6 desktop interface.
+- Dashboard cards for row count, date range, database health and data quality.
+- Historical data table.
+- Statistics and audit table.
+- Pair and triple summary panels.
+- Excel file picker with validation and import confirmation.
+- Open-data-folder and refresh actions.
+- GUI smoke test.
+
+### Changed
+- Running `py main.py` now opens the desktop interface.
+- Added `gui` and `status` commands.
+- PySide6 requirement updated for Python 3.14 support.
+
 ## v0.4.0 - Statistics & Data Audit
 
 ### Added
 - Descriptive analysis for values 01-45.
-- Current, previous, average and maximum occurrence distance.
-- Recent-window comparison.
+- Occurrence-distance analysis.
 - Pair and triple co-occurrence counts.
-- Sum, odd-even, low-high, adjacent-value and repeat distributions.
-- Weekday, month and year summaries.
-- Data-quality audit.
-- `analyze` command and automated tests.
+- Structural and time-based summaries.
+- Data-quality audit and automated tests.
 
 ## v0.3.0 - Excel Importer & Data Validation
 
 ### Added
 - Excel sheet and column detection.
 - Date, weekday and six-value normalization.
-- Duplicate-date and range checks.
-- Dry-run validation reports.
-- SQLite upsert import.
-- Importer and validation tests.
+- Validation reports and SQLite upsert import.
 
 ## v0.2.0 - Database Layer
 

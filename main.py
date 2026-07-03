@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 
+from ape.analytics.service import AnalysisService
 from ape.core.app import APEApplication
 from ape.core.exceptions import APEError
 from ape.importers.excel_importer import ExcelDrawImporter
@@ -35,6 +36,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--sheet",
         help="Tên sheet, mặc định tự nhận diện.",
     )
+
+    analyze_parser = subparsers.add_parser(
+        "analyze",
+        help="Phân tích mô tả dữ liệu đã lưu trong database.",
+    )
+    analyze_parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Số lượng mục hiển thị trong mỗi nhóm.",
+    )
+    analyze_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="In toàn bộ báo cáo dưới dạng JSON.",
+    )
     return parser
 
 
@@ -45,11 +62,36 @@ def print_status(app: APEApplication) -> None:
     print("APE - Adaptive Prediction Engine")
     print("Version :", summary["version"])
     print("Build   :", summary["build"])
-    print("Status  : Excel Importer Ready")
+    print("Status  : Statistics & Data Audit Ready")
     print("====================================================\n")
 
     for key, value in summary.items():
         print(f"{key}: {value}")
+
+
+def print_analysis(report) -> None:
+    leaders = ", ".join(
+        f"{item['event_id']:02d}({item['count']})"
+        for item in report.count_leaders
+    )
+    distances = ", ".join(
+        f"{item['event_id']:02d}({item['latest_distance']})"
+        for item in report.longest_distances
+    )
+    pairs = ", ".join(
+        f"{item['values']}({item['count']})"
+        for item in report.common_pairs
+    )
+
+    print("\n================ DATA ANALYSIS ================")
+    print("Số kỳ                 :", report.dataset["total_rows"])
+    print("Ngày đầu              :", report.dataset["first_date"])
+    print("Ngày cuối             :", report.dataset["last_date"])
+    print("Giá trị xuất hiện nhiều:", leaders)
+    print("Khoảng vắng hiện tại  :", distances)
+    print("Nhóm đôi phổ biến     :", pairs)
+    print("Chất lượng dữ liệu    :", report.audit["quality_score"], "/ 100")
+    print("================================================\n")
 
 
 def main() -> int:
@@ -58,14 +100,24 @@ def main() -> int:
     app.start()
 
     try:
-        importer = ExcelDrawImporter(app.database)
-
         if args.command == "validate":
-            report = importer.validate_file(args.file, args.sheet)
+            report = ExcelDrawImporter(app.database).validate_file(
+                args.file,
+                args.sheet,
+            )
             print(report.to_json())
         elif args.command == "import":
-            report = importer.import_file(args.file, args.sheet)
+            report = ExcelDrawImporter(app.database).import_file(
+                args.file,
+                args.sheet,
+            )
             print(report.to_json())
+        elif args.command == "analyze":
+            report = AnalysisService(app.database).generate(args.limit)
+            if args.json:
+                print(report.to_json())
+            else:
+                print_analysis(report)
         else:
             print_status(app)
 

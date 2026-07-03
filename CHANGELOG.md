@@ -1,28 +1,37 @@
 # CHANGELOG
 
+## v0.4.0 - Statistics & Data Audit
+
+### Added
+- Descriptive analysis for values 01-45.
+- Current, previous, average and maximum occurrence distance.
+- Recent-window comparison.
+- Pair and triple co-occurrence counts.
+- Sum, odd-even, low-high, adjacent-value and repeat distributions.
+- Weekday, month and year summaries.
+- Data-quality audit.
+- `analyze` command and automated tests.
+
+## v0.3.0 - Excel Importer & Data Validation
+
+### Added
+- Excel sheet and column detection.
+- Date, weekday and six-value normalization.
+- Duplicate-date and range checks.
+- Dry-run validation reports.
+- SQLite upsert import.
+- Importer and validation tests.
+
 ## v0.2.0 - Database Layer
 
 ### Added
-- SQLAlchemy base and timestamp support.
-- SQLite manager with transactions and health checks.
-- Database tables for draws, features, predictions, engine scores, rules, experiments and run records.
-- Repository classes for draws, predictions and rules.
-- Automated database tests.
-
-### Changed
-- Version updated to v0.2.0.
-- Startup now creates and verifies the local database.
-- Added pytest dependency.
+- SQLAlchemy base and SQLite manager.
+- Seven core database tables.
+- Repository classes and database tests.
 
 ## v0.1.1 - Core Foundation
 
 ### Added
-- Core package structure.
-- Version metadata.
-- Immutable settings system.
-- Global constants.
-- Custom exceptions.
-- Rotating file logger.
-- Application bootstrap.
-- Compatibility config.py.
-- Runnable main.py.
+- Project structure, settings and version metadata.
+- Constants, custom exceptions and rotating logger.
+- Application bootstrap and entry point.

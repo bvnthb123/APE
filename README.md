@@ -1,6 +1,6 @@
-# APE v0.4.0
+# APE v0.5.0
 
-Adaptive Prediction Engine - nền tảng phân tích chuỗi dữ liệu lịch sử.
+Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch sử.
 
 ## Module đã hoàn thành
 
@@ -8,45 +8,84 @@ Adaptive Prediction Engine - nền tảng phân tích chuỗi dữ liệu lịch
 - M2 - Database Layer
 - M3 - Excel Importer & Data Validation
 - M4 - Statistics & Data Audit
+- Sprint 2.1 - Desktop GUI
 
-## Cài đặt
+## Cập nhật bản mới
+
+Mở CMD trong thư mục dự án:
 
 ```text
+git pull
 py -m pip install -r requirements.txt
 ```
 
-## Các lệnh chính
+## Mở giao diện
 
 ```text
 py main.py
+```
+
+Hoặc chạy rõ lệnh GUI:
+
+```text
+py main.py gui
+```
+
+Trên Windows, bạn cũng có thể nhấp đúp file `main.py` nếu file Python đã được liên kết với Python Launcher.
+
+## Giao diện hiện có
+
+### Tổng quan
+
+- Tổng số kỳ đã lưu.
+- Khoảng thời gian dữ liệu.
+- Trạng thái SQLite.
+- Điểm chất lượng dữ liệu.
+- Danh sách các kỳ gần nhất.
+
+### Dữ liệu lịch sử
+
+- Ngày và thứ.
+- Bộ giá trị.
+- Tổng.
+- Cấu trúc lẻ/chẵn và thấp/cao.
+- Tên file nguồn.
+
+### Thống kê & kiểm tra
+
+- Số lần xuất hiện và tỷ lệ lịch sử.
+- Khoảng cách xuất hiện hiện tại, trung bình và lớn nhất.
+- Thống kê 30 kỳ gần nhất.
+- Cặp và bộ ba đồng xuất hiện.
+- Dòng lỗi, ngày trùng, sai thứ và khoảng thời gian dữ liệu dài.
+
+## Nhập Excel trên giao diện
+
+1. Nhấn `Nhập file Excel`.
+2. Chọn file `.xlsx` hoặc `.xls`.
+3. Xem báo cáo kiểm tra.
+4. Xác nhận nhập dữ liệu.
+5. Dashboard tự động làm mới.
+
+## Lệnh CMD vẫn được hỗ trợ
+
+```text
+py main.py status
 py main.py validate FILE.xlsx
 py main.py import FILE.xlsx
 py main.py analyze
-py main.py analyze --limit 15
 py main.py analyze --json
 py -m pytest -q
 ```
 
-## M4 cung cấp
+## Yêu cầu môi trường
 
-- Số lần xuất hiện và tỷ lệ của từng giá trị 01-45.
-- Khoảng cách hiện tại, khoảng cách trước đó, trung bình và lớn nhất.
-- Thống kê 30 kỳ gần nhất và mức thay đổi so với toàn bộ lịch sử.
-- Nhóm đôi và nhóm ba đồng xuất hiện nhiều.
-- Phân bố tổng, chẵn-lẻ, thấp-cao và các giá trị liền nhau.
-- Mức trùng với kỳ ngay trước đó.
-- Thống kê theo thứ, tháng và năm.
-- Kiểm tra dữ liệu lỗi, ngày trùng, sai thứ và thiếu thông tin nguồn.
+- Python 3.10 đến 3.14.
+- PySide6 6.11 trở lên.
+- Windows 64-bit được hỗ trợ.
 
-## Kết quả kiểm tra thực tế
+Các thống kê trong APE chỉ mô tả dữ liệu lịch sử, không bảo đảm kết quả tương lai.
 
-- 388 kỳ được phân tích.
-- Khoảng ngày: 03/01/2024 đến 24/06/2026.
-- 8 bài kiểm thử của M1-M4 đều đạt.
-- Điểm chất lượng dữ liệu: 100/100.
+## Bước tiếp theo
 
-Các thống kê trong M4 chỉ mô tả dữ liệu lịch sử, không phải cam kết về kết quả tương lai.
-
-## Module tiếp theo
-
-M5 - Feature Factory v1.
+Sprint 2.2 - Xuất báo cáo Excel/PDF và bổ sung biểu đồ trực quan.

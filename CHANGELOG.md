@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## v0.7.0 - Windows Portable Packaging
+
+### Added
+- PyInstaller packaging dependency file.
+- `APE.spec` portable-folder build configuration.
+- `build_windows.bat` one-command Windows build script.
+- `run_ape.bat` quick source-run script.
+- `PACKAGING.md` Windows build guide.
+
+### Changed
+- Version updated to v0.7.0.
+- `.gitignore` now excludes build outputs, `dist`, and packaging virtual environment.
+
 ## v0.6.0 - Report Export & Charts
 
 ### Added

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import sys
 from pathlib import Path
 from typing import Iterable
 
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
@@ -35,6 +38,7 @@ from ape.database.database import DATABASE, DatabaseManager
 from ape.database.models import Draw
 from ape.database.repositories import DrawRepository
 from ape.importers.excel_importer import ExcelDrawImporter
+from ape.reports.excel_exporter import ExcelReportExporter
 
 
 APP_STYLESHEET = """
@@ -199,6 +203,49 @@ class StatCard(QFrame):
         self.value_label.setText(str(value))
 
 
+class ChartCanvas(QWidget):
+    """Reusable Matplotlib canvas for embedded GUI charts."""
+
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        layout = QVBoxLayout(self)
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-size: 12pt; font-weight: 700;")
+        self.figure = Figure(figsize=(8, 3.2), tight_layout=True)
+        self.canvas = FigureCanvas(self.figure)
+        layout.addWidget(title_label)
+        layout.addWidget(self.canvas, 1)
+
+    def clear(self, message: str = "Chưa có dữ liệu") -> None:
+        self.figure.clear()
+        axis = self.figure.add_subplot(111)
+        axis.text(0.5, 0.5, message, ha="center", va="center")
+        axis.set_axis_off()
+        self.canvas.draw_idle()
+
+    def plot_bar(self, x_values, y_values, *, title: str, y_label: str) -> None:
+        self.figure.clear()
+        axis = self.figure.add_subplot(111)
+        axis.bar(x_values, y_values)
+        axis.set_title(title)
+        axis.set_ylabel(y_label)
+        axis.set_xlabel("Giá trị")
+        axis.tick_params(axis="x", rotation=90)
+        axis.grid(axis="y", alpha=0.25)
+        self.canvas.draw_idle()
+
+    def plot_line(self, x_values, y_values, *, title: str, y_label: str) -> None:
+        self.figure.clear()
+        axis = self.figure.add_subplot(111)
+        axis.plot(x_values, y_values, marker="o", linewidth=1.5)
+        axis.set_title(title)
+        axis.set_ylabel(y_label)
+        axis.set_xlabel("Giá trị")
+        axis.tick_params(axis="x", rotation=90)
+        axis.grid(alpha=0.25)
+        self.canvas.draw_idle()
+
+
 class MainWindow(QMainWindow):
     DRAW_COLUMNS = (
         "Ngày",
@@ -226,6 +273,7 @@ class MainWindow(QMainWindow):
         self.database.initialize()
         self.importer = ExcelDrawImporter(self.database)
         self.analysis_service = AnalysisService(self.database)
+        self.exporter = ExcelReportExporter(self.database)
         self.current_draws: list[Draw] = []
         self.current_report = None
 
@@ -247,6 +295,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_dashboard_tab(), "Tổng quan")
         self.tabs.addTab(self._build_data_tab(), "Dữ liệu lịch sử")
         self.tabs.addTab(self._build_analysis_tab(), "Thống kê & kiểm tra")
+        self.tabs.addTab(self._build_charts_tab(), "Biểu đồ")
         root_layout.addWidget(self.tabs, 1)
 
         self.setCentralWidget(root)
@@ -270,12 +319,15 @@ class MainWindow(QMainWindow):
 
         import_button = QPushButton("Nhập file Excel")
         import_button.clicked.connect(self.import_excel)
+        export_button = QPushButton("Xuất báo cáo Excel")
+        export_button.clicked.connect(self.export_excel)
         refresh_button = QPushButton("Làm mới")
         refresh_button.setObjectName("SecondaryButton")
         refresh_button.clicked.connect(self.refresh_all)
 
         layout.addLayout(text_layout, 1)
         layout.addWidget(import_button)
+        layout.addWidget(export_button)
         layout.addWidget(refresh_button)
         return header
 
@@ -299,7 +351,11 @@ class MainWindow(QMainWindow):
         open_data_button = QPushButton("Mở thư mục dữ liệu")
         open_data_button.setObjectName("SecondaryButton")
         open_data_button.clicked.connect(self.open_data_folder)
+        open_reports_button = QPushButton("Mở thư mục báo cáo")
+        open_reports_button.setObjectName("SecondaryButton")
+        open_reports_button.clicked.connect(self.open_reports_folder)
         action_row.addWidget(open_data_button)
+        action_row.addWidget(open_reports_button)
         action_row.addStretch()
         layout.addLayout(action_row)
 
@@ -346,6 +402,16 @@ class MainWindow(QMainWindow):
         layout.addLayout(side_layout, 2)
         return tab
 
+    def _build_charts_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(14, 14, 14, 14)
+        self.frequency_chart = ChartCanvas("Tần suất xuất hiện 01–45")
+        self.gap_chart = ChartCanvas("Khoảng vắng hiện tại")
+        layout.addWidget(self.frequency_chart, 1)
+        layout.addWidget(self.gap_chart, 1)
+        return tab
+
     @staticmethod
     def _create_table(columns: tuple[str, ...]) -> QTableWidget:
         table = QTableWidget(0, len(columns))
@@ -384,6 +450,7 @@ class MainWindow(QMainWindow):
                 self.period_card.set_value(f"{first_date}\n→ {last_date}")
                 self.current_report = self.analysis_service.generate(limit=10)
                 self._populate_analysis()
+                self._populate_charts()
             else:
                 self.period_card.set_value("Chưa có dữ liệu")
                 self.quality_card.set_value("-")
@@ -392,6 +459,8 @@ class MainWindow(QMainWindow):
                     "Hãy chọn “Nhập file Excel” để bắt đầu."
                 )
                 self.audit_text.clear()
+                self.frequency_chart.clear()
+                self.gap_chart.clear()
 
             self.statusBar().showMessage(f"Đã tải {total} kỳ dữ liệu", 5000)
         except Exception as exc:
@@ -435,6 +504,26 @@ class MainWindow(QMainWindow):
             f"{audit['missing_source_metadata_count']}\n\n"
             "Khoảng ngày dài trên 14 ngày:\n"
             + ("\n".join(long_gap_lines) if long_gap_lines else "Không có")
+        )
+
+    def _populate_charts(self) -> None:
+        report = self.current_report
+        if report is None:
+            return
+        labels = [f"{item['event_id']:02d}" for item in report.event_metrics]
+        counts = [item["count"] for item in report.event_metrics]
+        gaps = [item["latest_distance"] for item in report.event_metrics]
+        self.frequency_chart.plot_bar(
+            labels,
+            counts,
+            title="Số lần xuất hiện trong toàn bộ lịch sử",
+            y_label="Số lần",
+        )
+        self.gap_chart.plot_line(
+            labels,
+            gaps,
+            title="Số kỳ chưa xuất hiện tính đến kỳ mới nhất",
+            y_label="Số kỳ",
         )
 
     def import_excel(self) -> None:
@@ -497,9 +586,48 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._show_error("Không thể nhập file Excel", exc)
 
+    def export_excel(self) -> None:
+        if not self.current_draws:
+            QMessageBox.information(
+                self,
+                "Chưa có dữ liệu",
+                "Hãy nhập file Excel trước khi xuất báo cáo.",
+            )
+            return
+
+        default_name = SETTINGS.reports_dir / (
+            "ape_report_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".xlsx"
+        )
+        selected, _ = QFileDialog.getSaveFileName(
+            self,
+            "Lưu báo cáo Excel",
+            str(default_name),
+            "Excel Workbook (*.xlsx)",
+        )
+        if not selected:
+            return
+
+        try:
+            self.statusBar().showMessage("Đang xuất báo cáo Excel...")
+            output_path = self.exporter.export(selected, limit=20)
+            QMessageBox.information(
+                self,
+                "Xuất báo cáo thành công",
+                f"Đã lưu báo cáo tại:\n{output_path}",
+            )
+            self.statusBar().showMessage("Xuất báo cáo thành công", 5000)
+        except Exception as exc:
+            self._show_error("Không thể xuất báo cáo Excel", exc)
+
     def open_data_folder(self) -> None:
         QDesktopServices.openUrl(
             QUrl.fromLocalFile(str(SETTINGS.data_dir.resolve()))
+        )
+
+    def open_reports_folder(self) -> None:
+        SETTINGS.reports_dir.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(
+            QUrl.fromLocalFile(str(SETTINGS.reports_dir.resolve()))
         )
 
     @staticmethod
@@ -537,6 +665,7 @@ def run_gui() -> int:
 
 __all__ = [
     "APP_STYLESHEET",
+    "ChartCanvas",
     "MainWindow",
     "StatCard",
     "analysis_metric_rows",

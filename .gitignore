@@ -5,8 +5,12 @@ __pycache__/
 logs/
 reports/
 .venv/
+.venv_build/
 venv/
 env/
+build/
+dist/
+*.spec.bak
 .idea/
 .vscode/
 *.xlsx~

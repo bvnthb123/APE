@@ -28,19 +28,30 @@ Delivered:
 - Default GUI startup from `main.py`.
 
 ### Sprint 2.2 - Report Export & Charts
-Status: Next
+Status: Completed in v0.6.0
 
-Planned scope:
-- Export current data and statistics to Excel.
-- Export summary report to PDF.
-- Frequency and structure charts.
-- Date-range filtering.
-- Save user interface preferences.
+Delivered:
+- Excel report export.
+- Workbook sheets for overview, history, metrics, pairs, triples, audit and charts.
+- GUI export button.
+- Report folder shortcut.
+- GUI charts tab.
+- Frequency and current-gap charts.
 
 ### Sprint 2.3 - Windows Packaging
-Status: Pending
+Status: Next
 
 Planned scope:
 - Build a standalone Windows executable.
 - Add application icon and version metadata.
 - Create a portable release package.
+- Add a one-click launch script.
+
+### Sprint 2.4 - Interface Refinement
+Status: Pending
+
+Planned scope:
+- Date-range filtering.
+- Save user interface preferences.
+- Advanced search in historical data.
+- More chart layouts.

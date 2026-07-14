@@ -2,6 +2,6 @@
 
 APP_NAME = "Adaptive Prediction Engine"
 APP_CODE = "APE"
-VERSION = "0.6.0"
-BUILD_NAME = "Report Export & Charts"
+VERSION = "0.7.0"
+BUILD_NAME = "Windows Portable Packaging"
 AUTHOR = "Nguyen Thanh Chung + ChatGPT"

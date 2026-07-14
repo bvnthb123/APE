@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## v0.6.0 - Report Export & Charts
+
+### Added
+- Excel report exporter.
+- Export button in the desktop GUI.
+- Report folder shortcut.
+- Charts tab in the desktop GUI.
+- Frequency bar chart for values 01-45.
+- Current-gap line chart.
+- Excel workbook sheets for overview, history, metrics, pairs, triples, audit and charts.
+
 ## v0.5.0 - Desktop GUI
 
 ### Added

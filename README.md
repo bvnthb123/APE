@@ -1,4 +1,4 @@
-# APE v0.6.0
+# APE v0.7.0
 
 Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch sử.
 
@@ -10,6 +10,7 @@ Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch
 - M4 - Statistics & Data Audit
 - Sprint 2.1 - Desktop GUI
 - Sprint 2.2 - Report Export & Charts
+- Sprint 2.3 - Windows Portable Packaging
 
 ## Cập nhật bản mới
 
@@ -20,17 +21,33 @@ git pull
 py -m pip install -r requirements.txt
 ```
 
-## Mở giao diện
+## Mở giao diện từ mã nguồn
 
 ```text
 py main.py
 ```
 
-Hoặc chạy rõ lệnh GUI:
+Hoặc:
 
 ```text
-py main.py gui
+run_ape.bat
 ```
+
+## Đóng gói thành file chạy Windows
+
+Chạy:
+
+```text
+build_windows.bat
+```
+
+Sau khi build thành công, file chạy nằm tại:
+
+```text
+dist\APE\APE.exe
+```
+
+Lưu ý: đây là dạng portable folder. Cần giữ nguyên cả thư mục `dist\APE`, không copy riêng file `APE.exe` ra ngoài.
 
 ## Giao diện hiện có
 
@@ -102,12 +119,12 @@ py -m pytest -q
 
 ## Yêu cầu môi trường
 
-- Python 3.10 đến 3.14.
-- PySide6 6.11 trở lên.
-- Windows 64-bit được hỗ trợ.
+- Python 3.10 đến 3.14 để chạy từ mã nguồn.
+- Windows 64-bit.
+- Khi build `.exe`, nên build trên chính máy Windows sẽ sử dụng app.
 
 Các thống kê trong APE chỉ mô tả dữ liệu lịch sử, không bảo đảm kết quả tương lai.
 
 ## Bước tiếp theo
 
-Sprint 2.3 - Windows Packaging: đóng gói thành file `.exe` chạy độc lập.
+Sprint 2.4 - Hoàn thiện trải nghiệm bản phát hành: icon, shortcut desktop và file cấu hình người dùng.

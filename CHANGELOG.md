@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## v0.8.0 - Interface Refinement
+
+### Added
+- Date-range filters for the historical data tab.
+- Free-text search across date, weekday, values, sum and source file.
+- Filtered-row count card on the overview dashboard.
+- Persistent GUI preferences in `data/gui_preferences.json`.
+- Saved last Excel folder, last report folder and window size.
+- Total-sum chart for the latest 60 rows.
+- Odd-even distribution chart.
+- Automated tests for filtering and GUI preferences.
+
+### Changed
+- Recent rows now follow the active data filter.
+- Version updated to v0.8.0.
+
 ## v0.7.0 - Windows Portable Packaging
 
 ### Added

@@ -1,4 +1,4 @@
-# APE v0.7.0
+# APE v0.8.0
 
 Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch sử.
 
@@ -11,6 +11,7 @@ Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch
 - Sprint 2.1 - Desktop GUI
 - Sprint 2.2 - Report Export & Charts
 - Sprint 2.3 - Windows Portable Packaging
+- Sprint 2.4 - Interface Refinement
 
 ## Cập nhật bản mới
 
@@ -35,8 +36,6 @@ run_ape.bat
 
 ## Đóng gói thành file chạy Windows
 
-Chạy:
-
 ```text
 build_windows.bat
 ```
@@ -47,22 +46,25 @@ Sau khi build thành công, file chạy nằm tại:
 dist\APE\APE.exe
 ```
 
-Lưu ý: đây là dạng portable folder. Cần giữ nguyên cả thư mục `dist\APE`, không copy riêng file `APE.exe` ra ngoài.
+Đây là dạng portable folder. Cần giữ nguyên cả thư mục `dist\APE`, không copy riêng file `APE.exe` ra ngoài.
 
 ## Giao diện hiện có
 
 ### Tổng quan
 
 - Tổng số kỳ đã lưu.
+- Số kỳ đang hiển thị sau khi lọc.
 - Khoảng thời gian dữ liệu.
 - Trạng thái SQLite.
 - Điểm chất lượng dữ liệu.
-- Danh sách các kỳ gần nhất.
+- Danh sách các kỳ gần nhất theo bộ lọc hiện tại.
 - Nút mở thư mục dữ liệu.
 - Nút mở thư mục báo cáo.
 
 ### Dữ liệu lịch sử
 
+- Lọc từ ngày đến ngày.
+- Tìm kiếm theo ngày, thứ, bộ giá trị, tổng hoặc tên file nguồn.
 - Ngày và thứ.
 - Bộ giá trị.
 - Tổng.
@@ -81,6 +83,16 @@ Lưu ý: đây là dạng portable folder. Cần giữ nguyên cả thư mục `
 
 - Biểu đồ cột tần suất 01-45.
 - Biểu đồ đường khoảng vắng hiện tại.
+- Biểu đồ đường tổng trong 60 kỳ gần nhất.
+- Biểu đồ cột phân bố lẻ/chẵn.
+
+## Lưu thiết lập giao diện
+
+APE tự lưu các thiết lập sau vào `data/gui_preferences.json`:
+
+- Kích thước cửa sổ gần nhất.
+- Thư mục Excel mở gần nhất.
+- Thư mục báo cáo lưu gần nhất.
 
 ## Nhập Excel trên giao diện
 
@@ -127,4 +139,4 @@ Các thống kê trong APE chỉ mô tả dữ liệu lịch sử, không bảo 
 
 ## Bước tiếp theo
 
-Sprint 2.4 - Hoàn thiện trải nghiệm bản phát hành: icon, shortcut desktop và file cấu hình người dùng.
+Sprint 2.5 - Tạo desktop shortcut, icon ứng dụng và tối ưu trải nghiệm bản phát hành portable.

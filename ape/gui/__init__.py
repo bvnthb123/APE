@@ -2,24 +2,26 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 import sys
 from pathlib import Path
 from typing import Iterable
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QDate, Qt, QUrl
+from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QDateEdit,
     QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -37,6 +39,7 @@ from ape.core.version import APP_NAME, BUILD_NAME, VERSION
 from ape.database.database import DATABASE, DatabaseManager
 from ape.database.models import Draw
 from ape.database.repositories import DrawRepository
+from ape.gui.preferences import GuiPreferences
 from ape.importers.excel_importer import ExcelDrawImporter
 from ape.reports.excel_exporter import ExcelReportExporter
 
@@ -90,6 +93,12 @@ QPushButton#SecondaryButton {
     background: white;
     color: #005BAC;
     border: 1px solid #9DBFDF;
+}
+QLineEdit, QDateEdit {
+    background: white;
+    border: 1px solid #B8CCE0;
+    border-radius: 6px;
+    padding: 6px 8px;
 }
 QTabWidget::pane {
     border: 1px solid #D9E4F0;
@@ -172,6 +181,28 @@ def analysis_metric_rows(report) -> list[tuple[str, ...]]:
     ]
 
 
+def filter_draws(
+    draws: Iterable[Draw],
+    start_date: date | None = None,
+    end_date: date | None = None,
+    query: str = "",
+) -> list[Draw]:
+    """Filter historical draws by date range and free-text query."""
+    normalized_query = query.strip().lower()
+    filtered: list[Draw] = []
+    for draw in draws:
+        if start_date and draw.draw_date < start_date:
+            continue
+        if end_date and draw.draw_date > end_date:
+            continue
+        if normalized_query:
+            searchable = " ".join(draw_table_rows([draw])).lower()
+            if normalized_query not in searchable:
+                continue
+        filtered.append(draw)
+    return filtered
+
+
 def import_report_summary(report) -> str:
     return (
         f"Sheet: {report.sheet_name}\n"
@@ -181,6 +212,14 @@ def import_report_summary(report) -> str:
         f"Ngày trùng trong file: {report.duplicate_dates_in_file}\n"
         f"Khoảng ngày: {report.first_date or '-'} đến {report.last_date or '-'}"
     )
+
+
+def date_to_qdate(value: date) -> QDate:
+    return QDate(value.year, value.month, value.day)
+
+
+def qdate_to_date(value: QDate) -> date:
+    return date(value.year(), value.month(), value.day())
 
 
 class StatCard(QFrame):
@@ -223,24 +262,40 @@ class ChartCanvas(QWidget):
         axis.set_axis_off()
         self.canvas.draw_idle()
 
-    def plot_bar(self, x_values, y_values, *, title: str, y_label: str) -> None:
+    def plot_bar(
+        self,
+        x_values,
+        y_values,
+        *,
+        title: str,
+        y_label: str,
+        x_label: str = "Giá trị",
+    ) -> None:
         self.figure.clear()
         axis = self.figure.add_subplot(111)
         axis.bar(x_values, y_values)
         axis.set_title(title)
         axis.set_ylabel(y_label)
-        axis.set_xlabel("Giá trị")
+        axis.set_xlabel(x_label)
         axis.tick_params(axis="x", rotation=90)
         axis.grid(axis="y", alpha=0.25)
         self.canvas.draw_idle()
 
-    def plot_line(self, x_values, y_values, *, title: str, y_label: str) -> None:
+    def plot_line(
+        self,
+        x_values,
+        y_values,
+        *,
+        title: str,
+        y_label: str,
+        x_label: str = "Giá trị",
+    ) -> None:
         self.figure.clear()
         axis = self.figure.add_subplot(111)
         axis.plot(x_values, y_values, marker="o", linewidth=1.5)
         axis.set_title(title)
         axis.set_ylabel(y_label)
-        axis.set_xlabel("Giá trị")
+        axis.set_xlabel(x_label)
         axis.tick_params(axis="x", rotation=90)
         axis.grid(alpha=0.25)
         self.canvas.draw_idle()
@@ -274,11 +329,14 @@ class MainWindow(QMainWindow):
         self.importer = ExcelDrawImporter(self.database)
         self.analysis_service = AnalysisService(self.database)
         self.exporter = ExcelReportExporter(self.database)
+        self.preferences = GuiPreferences.load()
         self.current_draws: list[Draw] = []
+        self.filtered_draws: list[Draw] = []
         self.current_report = None
+        self.filter_bounds_ready = False
 
         self.setWindowTitle(f"{APP_NAME} v{VERSION}")
-        self.resize(1240, 790)
+        self.resize(self.preferences.window_width, self.preferences.window_height)
         self.setMinimumSize(980, 650)
         self._build_ui()
         self.refresh_all()
@@ -338,13 +396,15 @@ class MainWindow(QMainWindow):
 
         cards = QGridLayout()
         self.total_card = StatCard("Tổng số kỳ")
+        self.filtered_card = StatCard("Đang lọc")
         self.period_card = StatCard("Khoảng dữ liệu")
         self.health_card = StatCard("Database")
         self.quality_card = StatCard("Chất lượng dữ liệu")
         cards.addWidget(self.total_card, 0, 0)
-        cards.addWidget(self.period_card, 0, 1)
-        cards.addWidget(self.health_card, 0, 2)
-        cards.addWidget(self.quality_card, 0, 3)
+        cards.addWidget(self.filtered_card, 0, 1)
+        cards.addWidget(self.period_card, 0, 2)
+        cards.addWidget(self.health_card, 0, 3)
+        cards.addWidget(self.quality_card, 0, 4)
         layout.addLayout(cards)
 
         action_row = QHBoxLayout()
@@ -372,6 +432,40 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(14, 14, 14, 14)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Từ ngày"))
+        self.start_date_edit = QDateEdit()
+        self.start_date_edit.setDisplayFormat("dd/MM/yyyy")
+        self.start_date_edit.setCalendarPopup(True)
+        filter_row.addWidget(self.start_date_edit)
+
+        filter_row.addWidget(QLabel("Đến ngày"))
+        self.end_date_edit = QDateEdit()
+        self.end_date_edit.setDisplayFormat("dd/MM/yyyy")
+        self.end_date_edit.setCalendarPopup(True)
+        filter_row.addWidget(self.end_date_edit)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(
+            "Tìm ngày, thứ, bộ số, tổng hoặc tên file nguồn..."
+        )
+        self.search_input.returnPressed.connect(self.apply_data_filters)
+        filter_row.addWidget(self.search_input, 1)
+
+        apply_button = QPushButton("Lọc")
+        apply_button.clicked.connect(self.apply_data_filters)
+        reset_button = QPushButton("Xóa lọc")
+        reset_button.setObjectName("SecondaryButton")
+        reset_button.clicked.connect(self.reset_data_filters)
+        filter_row.addWidget(apply_button)
+        filter_row.addWidget(reset_button)
+        layout.addLayout(filter_row)
+
+        self.filter_status_label = QLabel("Đang hiển thị 0/0 kỳ")
+        self.filter_status_label.setStyleSheet("color: #5E7184;")
+        layout.addWidget(self.filter_status_label)
+
         self.data_table = self._create_table(self.DRAW_COLUMNS)
         layout.addWidget(self.data_table)
         return tab
@@ -408,8 +502,12 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(14, 14, 14, 14)
         self.frequency_chart = ChartCanvas("Tần suất xuất hiện 01–45")
         self.gap_chart = ChartCanvas("Khoảng vắng hiện tại")
+        self.total_sum_chart = ChartCanvas("Diễn biến tổng theo thời gian")
+        self.odd_even_chart = ChartCanvas("Phân bố cấu trúc lẻ/chẵn")
         layout.addWidget(self.frequency_chart, 1)
         layout.addWidget(self.gap_chart, 1)
+        layout.addWidget(self.total_sum_chart, 1)
+        layout.addWidget(self.odd_even_chart, 1)
         return tab
 
     @staticmethod
@@ -434,10 +532,6 @@ class MainWindow(QMainWindow):
             with self.database.session() as session:
                 self.current_draws = DrawRepository(session).list_chronological()
 
-            rows = draw_table_rows(self.current_draws)
-            self._fill_table(self.data_table, rows)
-            self._fill_table(self.recent_table, list(reversed(rows[-8:])))
-
             total = len(self.current_draws)
             self.total_card.set_value(total)
             self.health_card.set_value(
@@ -445,15 +539,25 @@ class MainWindow(QMainWindow):
             )
 
             if self.current_draws:
-                first_date = self.current_draws[0].draw_date.strftime("%d/%m/%Y")
-                last_date = self.current_draws[-1].draw_date.strftime("%d/%m/%Y")
-                self.period_card.set_value(f"{first_date}\n→ {last_date}")
+                first_date = self.current_draws[0].draw_date
+                last_date = self.current_draws[-1].draw_date
+                self.period_card.set_value(
+                    f"{first_date.strftime('%d/%m/%Y')}\n→ "
+                    f"{last_date.strftime('%d/%m/%Y')}"
+                )
+                self._sync_filter_bounds(first_date, last_date)
+                self.apply_data_filters(show_message=False)
                 self.current_report = self.analysis_service.generate(limit=10)
                 self._populate_analysis()
                 self._populate_charts()
             else:
+                self.filtered_draws = []
+                self.filtered_card.set_value("0/0")
+                self.filter_status_label.setText("Đang hiển thị 0/0 kỳ")
                 self.period_card.set_value("Chưa có dữ liệu")
                 self.quality_card.set_value("-")
+                self._fill_table(self.data_table, [])
+                self._fill_table(self.recent_table, [])
                 self.metric_table.setRowCount(0)
                 self.groups_text.setPlainText(
                     "Hãy chọn “Nhập file Excel” để bắt đầu."
@@ -461,10 +565,62 @@ class MainWindow(QMainWindow):
                 self.audit_text.clear()
                 self.frequency_chart.clear()
                 self.gap_chart.clear()
+                self.total_sum_chart.clear()
+                self.odd_even_chart.clear()
 
             self.statusBar().showMessage(f"Đã tải {total} kỳ dữ liệu", 5000)
         except Exception as exc:
             self._show_error("Không thể làm mới dữ liệu", exc)
+
+    def _sync_filter_bounds(self, first_date: date, last_date: date) -> None:
+        start_qdate = date_to_qdate(first_date)
+        end_qdate = date_to_qdate(last_date)
+        for editor in (self.start_date_edit, self.end_date_edit):
+            editor.setDateRange(start_qdate, end_qdate)
+        if not self.filter_bounds_ready:
+            self.start_date_edit.setDate(start_qdate)
+            self.end_date_edit.setDate(end_qdate)
+            self.filter_bounds_ready = True
+
+    def apply_data_filters(self, show_message: bool = True) -> None:
+        if not self.current_draws:
+            self.filtered_draws = []
+            self._fill_table(self.data_table, [])
+            self._fill_table(self.recent_table, [])
+            return
+
+        start = qdate_to_date(self.start_date_edit.date())
+        end = qdate_to_date(self.end_date_edit.date())
+        if start > end:
+            QMessageBox.warning(
+                self,
+                "Khoảng ngày không hợp lệ",
+                "Ngày bắt đầu không được lớn hơn ngày kết thúc.",
+            )
+            return
+
+        self.filtered_draws = filter_draws(
+            self.current_draws,
+            start,
+            end,
+            self.search_input.text(),
+        )
+        rows = draw_table_rows(self.filtered_draws)
+        self._fill_table(self.data_table, rows)
+        self._fill_table(self.recent_table, list(reversed(rows[-8:])))
+        summary = f"{len(self.filtered_draws)}/{len(self.current_draws)}"
+        self.filtered_card.set_value(summary)
+        self.filter_status_label.setText(f"Đang hiển thị {summary} kỳ")
+        if show_message:
+            self.statusBar().showMessage(f"Đã lọc {summary} kỳ", 4000)
+
+    def reset_data_filters(self) -> None:
+        if not self.current_draws:
+            return
+        self.start_date_edit.setDate(date_to_qdate(self.current_draws[0].draw_date))
+        self.end_date_edit.setDate(date_to_qdate(self.current_draws[-1].draw_date))
+        self.search_input.clear()
+        self.apply_data_filters()
 
     def _populate_analysis(self) -> None:
         report = self.current_report
@@ -526,15 +682,35 @@ class MainWindow(QMainWindow):
             y_label="Số kỳ",
         )
 
+        recent_draws = self.current_draws[-60:]
+        self.total_sum_chart.plot_line(
+            [draw.draw_date.strftime("%d/%m") for draw in recent_draws],
+            [draw.total_sum for draw in recent_draws],
+            title="Tổng bộ số trong 60 kỳ gần nhất",
+            y_label="Tổng",
+            x_label="Kỳ",
+        )
+        odd_even = report.structure.get("odd_even_patterns", {})
+        self.odd_even_chart.plot_bar(
+            list(odd_even.keys()),
+            list(odd_even.values()),
+            title="Phân bố số lượng lẻ/chẵn",
+            y_label="Số kỳ",
+            x_label="Mẫu lẻ-chẵn",
+        )
+
     def import_excel(self) -> None:
+        start_dir = self.preferences.last_excel_dir or str(Path.home())
         selected, _ = QFileDialog.getOpenFileName(
             self,
             "Chọn file dữ liệu Excel",
-            str(Path.home()),
+            start_dir,
             "Excel Workbook (*.xlsx *.xls)",
         )
         if not selected:
             return
+        self.preferences.last_excel_dir = str(Path(selected).parent)
+        self.preferences.save()
 
         try:
             self.statusBar().showMessage("Đang kiểm tra file Excel...")
@@ -582,6 +758,7 @@ class MainWindow(QMainWindow):
                     f"Dòng lỗi: {result.invalid_rows}"
                 ),
             )
+            self.filter_bounds_ready = False
             self.refresh_all()
         except Exception as exc:
             self._show_error("Không thể nhập file Excel", exc)
@@ -594,8 +771,8 @@ class MainWindow(QMainWindow):
                 "Hãy nhập file Excel trước khi xuất báo cáo.",
             )
             return
-
-        default_name = SETTINGS.reports_dir / (
+        output_dir = Path(self.preferences.last_report_dir or SETTINGS.reports_dir)
+        default_name = output_dir / (
             "ape_report_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".xlsx"
         )
         selected, _ = QFileDialog.getSaveFileName(
@@ -606,6 +783,8 @@ class MainWindow(QMainWindow):
         )
         if not selected:
             return
+        self.preferences.last_report_dir = str(Path(selected).parent)
+        self.preferences.save()
 
         try:
             self.statusBar().showMessage("Đang xuất báo cáo Excel...")
@@ -647,6 +826,12 @@ class MainWindow(QMainWindow):
         finally:
             table.setUpdatesEnabled(True)
 
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self.preferences.window_width = self.width()
+        self.preferences.window_height = self.height()
+        self.preferences.save()
+        super().closeEvent(event)
+
     def _show_error(self, title: str, error: Exception) -> None:
         self.statusBar().showMessage("Có lỗi", 5000)
         QMessageBox.critical(self, title, str(error))
@@ -670,6 +855,7 @@ __all__ = [
     "StatCard",
     "analysis_metric_rows",
     "draw_table_rows",
+    "filter_draws",
     "format_numbers",
     "import_report_summary",
     "run_gui",

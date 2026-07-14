@@ -38,20 +38,23 @@ Delivered:
 - GUI charts tab.
 - Frequency and current-gap charts.
 
-### Sprint 2.3 - Windows Packaging
-Status: Next
+### Sprint 2.3 - Windows Portable Packaging
+Status: Completed in v0.7.0
 
-Planned scope:
-- Build a standalone Windows executable.
-- Add application icon and version metadata.
-- Create a portable release package.
-- Add a one-click launch script.
+Delivered:
+- PyInstaller spec file.
+- Packaging dependency file.
+- One-command Windows build script.
+- Source-run batch script.
+- Portable-folder release output at `dist/APE/APE.exe`.
+- Packaging guide.
 
 ### Sprint 2.4 - Interface Refinement
-Status: Pending
+Status: Next
 
 Planned scope:
 - Date-range filtering.
 - Save user interface preferences.
 - Advanced search in historical data.
 - More chart layouts.
+- Optional desktop shortcut helper.

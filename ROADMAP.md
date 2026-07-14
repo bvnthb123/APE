@@ -50,11 +50,32 @@ Delivered:
 - Packaging guide.
 
 ### Sprint 2.4 - Interface Refinement
+Status: Completed in v0.8.0
+
+Delivered:
+- Date-range filtering.
+- Free-text search in historical data.
+- Filtered-row dashboard card.
+- Persistent GUI preferences.
+- Saved last Excel/report folders and window size.
+- Additional total-sum and odd-even charts.
+- Filtering and preferences tests.
+
+### Sprint 2.5 - Release Polish
 Status: Next
 
 Planned scope:
-- Date-range filtering.
-- Save user interface preferences.
-- Advanced search in historical data.
-- More chart layouts.
-- Optional desktop shortcut helper.
+- Desktop shortcut helper.
+- Application icon and release metadata.
+- Portable release README for non-technical users.
+- Build output verification checklist.
+- Optional backup and restore tool for local database.
+
+## Sprint 3 - Data Management
+Status: Pending
+
+Planned scope:
+- Database backup and restore.
+- Import history log.
+- Duplicate import review.
+- Dataset merge tools.

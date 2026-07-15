@@ -17,7 +17,7 @@ hiddenimports += [
     "numpy",
 ]
 
-datas = []
+datas = [("assets", "assets")]
 datas += collect_data_files("matplotlib")
 datas += collect_data_files("PySide6")
 

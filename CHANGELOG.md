@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## v0.9.0 - Release Polish & Backup
+
+### Added
+- SVG application icon.
+- Desktop shortcut helper scripts.
+- Database backup and restore manager.
+- GUI buttons for backup, restore, application folder and About dialog.
+- Safer SQLite backup using the SQLite backup API.
+- Restore validation for SQLite backup files.
+- Automated backup and restore tests.
+
+### Changed
+- Version updated to v0.9.0.
+- PyInstaller spec now includes release assets.
+
 ## v0.8.0 - Interface Refinement
 
 ### Added

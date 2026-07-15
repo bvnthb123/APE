@@ -10,7 +10,7 @@ from typing import Iterable
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtCore import QDate, Qt, QUrl
-from PySide6.QtGui import QCloseEvent, QDesktopServices
+from PySide6.QtGui import QCloseEvent, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -41,6 +41,7 @@ from ape.database.models import Draw
 from ape.database.repositories import DrawRepository
 from ape.gui.preferences import GuiPreferences
 from ape.importers.excel_importer import ExcelDrawImporter
+from ape.release.backup import BackupManager
 from ape.reports.excel_exporter import ExcelReportExporter
 
 
@@ -144,6 +145,17 @@ QStatusBar {
     color: #294A68;
 }
 """
+
+
+def application_root() -> Path:
+    """Return the folder users should treat as the current application root."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2]
+
+
+def icon_path() -> Path:
+    return application_root() / "assets" / "ape_icon.svg"
 
 
 def format_numbers(numbers: Iterable[int]) -> str:
@@ -329,6 +341,7 @@ class MainWindow(QMainWindow):
         self.importer = ExcelDrawImporter(self.database)
         self.analysis_service = AnalysisService(self.database)
         self.exporter = ExcelReportExporter(self.database)
+        self.backup_manager = BackupManager()
         self.preferences = GuiPreferences.load()
         self.current_draws: list[Draw] = []
         self.filtered_draws: list[Draw] = []
@@ -336,6 +349,9 @@ class MainWindow(QMainWindow):
         self.filter_bounds_ready = False
 
         self.setWindowTitle(f"{APP_NAME} v{VERSION}")
+        current_icon = icon_path()
+        if current_icon.exists():
+            self.setWindowIcon(QIcon(str(current_icon)))
         self.resize(self.preferences.window_width, self.preferences.window_height)
         self.setMinimumSize(980, 650)
         self._build_ui()
@@ -414,8 +430,23 @@ class MainWindow(QMainWindow):
         open_reports_button = QPushButton("Mở thư mục báo cáo")
         open_reports_button.setObjectName("SecondaryButton")
         open_reports_button.clicked.connect(self.open_reports_folder)
+        open_app_button = QPushButton("Mở thư mục ứng dụng")
+        open_app_button.setObjectName("SecondaryButton")
+        open_app_button.clicked.connect(self.open_app_folder)
+        backup_button = QPushButton("Sao lưu DB")
+        backup_button.clicked.connect(self.backup_database)
+        restore_button = QPushButton("Khôi phục DB")
+        restore_button.setObjectName("SecondaryButton")
+        restore_button.clicked.connect(self.restore_database)
+        about_button = QPushButton("Giới thiệu")
+        about_button.setObjectName("SecondaryButton")
+        about_button.clicked.connect(self.show_about)
         action_row.addWidget(open_data_button)
         action_row.addWidget(open_reports_button)
+        action_row.addWidget(open_app_button)
+        action_row.addWidget(backup_button)
+        action_row.addWidget(restore_button)
+        action_row.addWidget(about_button)
         action_row.addStretch()
         layout.addLayout(action_row)
 
@@ -598,7 +629,6 @@ class MainWindow(QMainWindow):
                 "Ngày bắt đầu không được lớn hơn ngày kết thúc.",
             )
             return
-
         self.filtered_draws = filter_draws(
             self.current_draws,
             start,
@@ -746,7 +776,6 @@ class MainWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 self.statusBar().showMessage("Đã hủy nhập dữ liệu", 4000)
                 return
-
             result = self.importer.import_file(selected)
             QMessageBox.information(
                 self,
@@ -798,7 +827,69 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._show_error("Không thể xuất báo cáo Excel", exc)
 
+    def backup_database(self) -> None:
+        try:
+            self.statusBar().showMessage("Đang sao lưu database...")
+            result = self.backup_manager.backup()
+            QMessageBox.information(
+                self,
+                "Sao lưu database thành công",
+                (
+                    "Đã tạo bản sao lưu:\n"
+                    f"{result.target}\n\n"
+                    f"Dung lượng: {result.bytes_copied:,} bytes"
+                ),
+            )
+            self.statusBar().showMessage("Sao lưu database thành công", 5000)
+        except Exception as exc:
+            self._show_error("Không thể sao lưu database", exc)
+
+    def restore_database(self) -> None:
+        start_dir = str(self.backup_manager.backup_dir)
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            "Chọn file database sao lưu",
+            start_dir,
+            "SQLite Database (*.db *.sqlite *.backup)",
+        )
+        if not selected:
+            return
+        answer = QMessageBox.warning(
+            self,
+            "Xác nhận khôi phục database",
+            (
+                "Thao tác này sẽ thay thế database hiện tại bằng file sao lưu đã chọn.\n"
+                "APE sẽ tự tạo một bản backup an toàn trước khi khôi phục.\n\n"
+                "Tiếp tục khôi phục?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            self.statusBar().showMessage("Đang khôi phục database...")
+            self.database.dispose()
+            result = self.backup_manager.restore(selected)
+            self.database.initialize()
+            self.filter_bounds_ready = False
+            self.refresh_all()
+            QMessageBox.information(
+                self,
+                "Khôi phục database thành công",
+                f"Đã khôi phục từ:\n{result.source}",
+            )
+            self.statusBar().showMessage("Khôi phục database thành công", 5000)
+        except Exception as exc:
+            try:
+                self.database.initialize()
+            except Exception:
+                pass
+            self._show_error("Không thể khôi phục database", exc)
+
     def open_data_folder(self) -> None:
+        SETTINGS.data_dir.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(
             QUrl.fromLocalFile(str(SETTINGS.data_dir.resolve()))
         )
@@ -807,6 +898,24 @@ class MainWindow(QMainWindow):
         SETTINGS.reports_dir.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(
             QUrl.fromLocalFile(str(SETTINGS.reports_dir.resolve()))
+        )
+
+    def open_app_folder(self) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(application_root())))
+
+    def show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "Giới thiệu APE",
+            (
+                f"<b>{APP_NAME}</b><br>"
+                f"Phiên bản: {VERSION}<br>"
+                f"Build: {BUILD_NAME}<br><br>"
+                "APE là ứng dụng desktop hỗ trợ nhập, kiểm tra, thống kê "
+                "và xuất báo cáo dữ liệu lịch sử.<br><br>"
+                "Các thống kê chỉ mô tả dữ liệu quá khứ, không phải cam kết "
+                "hay bảo đảm cho kết quả tương lai."
+            ),
         )
 
     @staticmethod
@@ -841,6 +950,9 @@ def run_gui() -> int:
     application = QApplication.instance() or QApplication(sys.argv)
     application.setApplicationName(APP_NAME)
     application.setOrganizationName("APE")
+    icon = icon_path()
+    if icon.exists():
+        application.setWindowIcon(QIcon(str(icon)))
     application.setStyleSheet(APP_STYLESHEET)
 
     window = MainWindow()
@@ -854,9 +966,11 @@ __all__ = [
     "MainWindow",
     "StatCard",
     "analysis_metric_rows",
+    "application_root",
     "draw_table_rows",
     "filter_draws",
     "format_numbers",
+    "icon_path",
     "import_report_summary",
     "run_gui",
 ]

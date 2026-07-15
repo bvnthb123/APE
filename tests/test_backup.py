@@ -1,3 +1,4 @@
+from pathlib import Path
 import sqlite3
 
 from ape.release.backup import BackupManager
@@ -20,10 +21,9 @@ def test_backup_manager_creates_restoreable_copy(tmp_path):
     backup_dir = tmp_path / "backups"
     create_sqlite_file(database_file)
 
-    manager = BackupManager(database_file, backup_dir)
-    result = manager.backup()
+    result = BackupManager(database_file, backup_dir).backup()
+    backup_file = Path(result.target)
 
-    backup_file = backup_dir / result.target.split("backups")[-1].strip("\\/")
     assert backup_file.exists()
     assert result.bytes_copied > 0
     assert count_rows(backup_file) == 1

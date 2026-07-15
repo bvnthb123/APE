@@ -1,4 +1,4 @@
-# APE v0.8.0
+# APE v0.9.0
 
 Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch sử.
 
@@ -12,6 +12,7 @@ Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch
 - Sprint 2.2 - Report Export & Charts
 - Sprint 2.3 - Windows Portable Packaging
 - Sprint 2.4 - Interface Refinement
+- Sprint 2.5 - Release Polish & Backup
 
 ## Cập nhật bản mới
 
@@ -48,6 +49,16 @@ dist\APE\APE.exe
 
 Đây là dạng portable folder. Cần giữ nguyên cả thư mục `dist\APE`, không copy riêng file `APE.exe` ra ngoài.
 
+## Tạo shortcut ngoài desktop
+
+Chạy:
+
+```text
+create_desktop_shortcut.bat
+```
+
+Script sẽ ưu tiên tạo shortcut tới `dist\APE\APE.exe`. Nếu chưa build bản `.exe`, script sẽ tạo shortcut tới `run_ape.bat`.
+
 ## Giao diện hiện có
 
 ### Tổng quan
@@ -58,8 +69,12 @@ dist\APE\APE.exe
 - Trạng thái SQLite.
 - Điểm chất lượng dữ liệu.
 - Danh sách các kỳ gần nhất theo bộ lọc hiện tại.
-- Nút mở thư mục dữ liệu.
-- Nút mở thư mục báo cáo.
+- Mở thư mục dữ liệu.
+- Mở thư mục báo cáo.
+- Mở thư mục ứng dụng.
+- Sao lưu database.
+- Khôi phục database.
+- Màn hình Giới thiệu.
 
 ### Dữ liệu lịch sử
 
@@ -86,9 +101,26 @@ dist\APE\APE.exe
 - Biểu đồ đường tổng trong 60 kỳ gần nhất.
 - Biểu đồ cột phân bố lẻ/chẵn.
 
+## Sao lưu và khôi phục database
+
+### Sao lưu
+
+1. Mở tab `Tổng quan`.
+2. Nhấn `Sao lưu DB`.
+3. APE tạo bản sao lưu trong `data\backups`.
+
+### Khôi phục
+
+1. Mở tab `Tổng quan`.
+2. Nhấn `Khôi phục DB`.
+3. Chọn file `.db`, `.sqlite` hoặc `.backup`.
+4. Xác nhận khôi phục.
+
+Khi khôi phục, APE tự tạo một bản backup an toàn của database hiện tại trước khi ghi đè.
+
 ## Lưu thiết lập giao diện
 
-APE tự lưu các thiết lập sau vào `data/gui_preferences.json`:
+APE tự lưu các thiết lập sau vào `data\gui_preferences.json`:
 
 - Kích thước cửa sổ gần nhất.
 - Thư mục Excel mở gần nhất.
@@ -139,4 +171,4 @@ Các thống kê trong APE chỉ mô tả dữ liệu lịch sử, không bảo 
 
 ## Bước tiếp theo
 
-Sprint 2.5 - Tạo desktop shortcut, icon ứng dụng và tối ưu trải nghiệm bản phát hành portable.
+Sprint 2.6 - Release ZIP, kiểm tra portable trên máy sạch và cải thiện giao diện biểu đồ.

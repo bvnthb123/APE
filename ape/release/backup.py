@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import shutil
+import sqlite3
 
 from ape.core.exceptions import APEError
 from ape.core.settings import SETTINGS
@@ -49,12 +50,20 @@ class BackupManager:
         if not source.is_file():
             raise BackupError(f"Đường dẫn database không phải file: {source}")
 
-        target = Path(output_file).expanduser().resolve() if output_file else self.default_backup_path()
+        target = (
+            Path(output_file).expanduser().resolve()
+            if output_file
+            else self.default_backup_path()
+        )
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.resolve() == source:
             raise BackupError("Không thể sao lưu đè lên chính file database đang dùng.")
 
-        shutil.copy2(source, target)
+        # Use SQLite's backup API so WAL-mode databases are copied consistently.
+        with sqlite3.connect(source) as source_connection:
+            with sqlite3.connect(target) as target_connection:
+                source_connection.backup(target_connection)
+
         return BackupResult(
             source=str(source),
             target=str(target),
@@ -70,6 +79,7 @@ class BackupManager:
             raise BackupError(f"File sao lưu không hợp lệ: {source}")
         if source.suffix.lower() not in {".db", ".sqlite", ".backup"}:
             raise BackupError("Chỉ hỗ trợ khôi phục file .db, .sqlite hoặc .backup.")
+        self._validate_sqlite_file(source)
 
         target = self.database_file.resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -96,8 +106,17 @@ class BackupManager:
     def list_backups(self) -> list[Path]:
         if not self.backup_dir.exists():
             return []
+        allowed = {".db", ".sqlite", ".backup"}
         return sorted(
-            [path for path in self.backup_dir.iterdir() if path.suffix.lower() in {".db", ".sqlite", ".backup"}],
+            [path for path in self.backup_dir.iterdir() if path.suffix.lower() in allowed],
             key=lambda path: path.stat().st_mtime,
             reverse=True,
         )
+
+    @staticmethod
+    def _validate_sqlite_file(path: Path) -> None:
+        try:
+            with sqlite3.connect(path) as connection:
+                connection.execute("PRAGMA schema_version").fetchone()
+        except sqlite3.DatabaseError as exc:
+            raise BackupError(f"File sao lưu không phải SQLite hợp lệ: {path}") from exc

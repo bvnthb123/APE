@@ -61,21 +61,34 @@ Delivered:
 - Additional total-sum and odd-even charts.
 - Filtering and preferences tests.
 
-### Sprint 2.5 - Release Polish
+### Sprint 2.5 - Release Polish & Backup
+Status: Completed in v0.9.0
+
+Delivered:
+- SVG application icon.
+- Desktop shortcut helper.
+- About dialog.
+- Application folder shortcut.
+- GUI database backup and restore.
+- Safe SQLite backup API.
+- Restore validation and pre-restore safety backup.
+- Backup and restore tests.
+
+### Sprint 2.6 - Release ZIP & QA
 Status: Next
 
 Planned scope:
-- Desktop shortcut helper.
-- Application icon and release metadata.
-- Portable release README for non-technical users.
-- Build output verification checklist.
-- Optional backup and restore tool for local database.
+- Build portable release zip.
+- Add build verification checklist.
+- Add user-facing quick-start guide.
+- Test launch flow on a clean Windows folder.
+- Add optional sample dataset workflow.
 
 ## Sprint 3 - Data Management
 Status: Pending
 
 Planned scope:
-- Database backup and restore.
 - Import history log.
 - Duplicate import review.
 - Dataset merge tools.
+- Data dictionary and validation dashboard.

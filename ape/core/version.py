@@ -2,6 +2,6 @@
 
 APP_NAME = "Adaptive Prediction Engine"
 APP_CODE = "APE"
-VERSION = "0.9.0"
-BUILD_NAME = "Release Polish & Backup"
+VERSION = "1.0.0"
+BUILD_NAME = "Portable Release & QA"
 AUTHOR = "Nguyen Thanh Chung + ChatGPT"

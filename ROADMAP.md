@@ -75,20 +75,22 @@ Delivered:
 - Backup and restore tests.
 
 ### Sprint 2.6 - Release ZIP & QA
-Status: Next
+Status: Completed in v1.0.0
 
-Planned scope:
-- Build portable release zip.
-- Add build verification checklist.
-- Add user-facing quick-start guide.
-- Test launch flow on a clean Windows folder.
-- Add optional sample dataset workflow.
+Delivered:
+- Portable release ZIP builder.
+- One-command `make_release_zip.bat` script.
+- End-user quick-start guide.
+- Release notes.
+- QA checklist.
+- Release ZIP smoke tests.
 
 ## Sprint 3 - Data Management
-Status: Pending
+Status: Next
 
 Planned scope:
 - Import history log.
 - Duplicate import review.
 - Dataset merge tools.
-- Data dictionary and validation dashboard.
+- Data source management.
+- App-level backup overview.

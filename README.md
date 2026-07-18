@@ -1,4 +1,4 @@
-# APE v0.9.0
+# APE v1.0.0
 
 Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch sử.
 
@@ -13,6 +13,7 @@ Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch
 - Sprint 2.3 - Windows Portable Packaging
 - Sprint 2.4 - Interface Refinement
 - Sprint 2.5 - Release Polish & Backup
+- Sprint 2.6 - Release ZIP & QA
 
 ## Cập nhật bản mới
 
@@ -37,6 +38,8 @@ run_ape.bat
 
 ## Đóng gói thành file chạy Windows
 
+Bước 1 - Build portable app:
+
 ```text
 build_windows.bat
 ```
@@ -47,17 +50,26 @@ Sau khi build thành công, file chạy nằm tại:
 dist\APE\APE.exe
 ```
 
-Đây là dạng portable folder. Cần giữ nguyên cả thư mục `dist\APE`, không copy riêng file `APE.exe` ra ngoài.
-
-## Tạo shortcut ngoài desktop
-
-Chạy:
+Bước 2 - Tạo file ZIP để gửi người khác:
 
 ```text
-create_desktop_shortcut.bat
+make_release_zip.bat
 ```
 
-Script sẽ ưu tiên tạo shortcut tới `dist\APE\APE.exe`. Nếu chưa build bản `.exe`, script sẽ tạo shortcut tới `run_ape.bat`.
+File ZIP nằm tại:
+
+```text
+releases\APE-v1.0.0-portable.zip
+```
+
+Đây là dạng portable folder. Người dùng cần giải nén ZIP và chạy `APE.exe`. Không copy riêng `APE.exe` ra ngoài thư mục.
+
+## Tài liệu phát hành
+
+- `README_FOR_USERS.md`: hướng dẫn cho người dùng cuối.
+- `RELEASE_QA_CHECKLIST.md`: checklist kiểm thử trước khi gửi bản ZIP.
+- `RELEASE_NOTES.md`: ghi chú phát hành.
+- `PACKAGING.md`: hướng dẫn build cho Windows.
 
 ## Giao diện hiện có
 
@@ -69,12 +81,12 @@ Script sẽ ưu tiên tạo shortcut tới `dist\APE\APE.exe`. Nếu chưa build
 - Trạng thái SQLite.
 - Điểm chất lượng dữ liệu.
 - Danh sách các kỳ gần nhất theo bộ lọc hiện tại.
-- Mở thư mục dữ liệu.
-- Mở thư mục báo cáo.
-- Mở thư mục ứng dụng.
-- Sao lưu database.
-- Khôi phục database.
-- Màn hình Giới thiệu.
+- Nút mở thư mục dữ liệu.
+- Nút mở thư mục báo cáo.
+- Nút mở thư mục ứng dụng.
+- Nút sao lưu database.
+- Nút khôi phục database.
+- Nút giới thiệu ứng dụng.
 
 ### Dữ liệu lịch sử
 
@@ -101,26 +113,9 @@ Script sẽ ưu tiên tạo shortcut tới `dist\APE\APE.exe`. Nếu chưa build
 - Biểu đồ đường tổng trong 60 kỳ gần nhất.
 - Biểu đồ cột phân bố lẻ/chẵn.
 
-## Sao lưu và khôi phục database
-
-### Sao lưu
-
-1. Mở tab `Tổng quan`.
-2. Nhấn `Sao lưu DB`.
-3. APE tạo bản sao lưu trong `data\backups`.
-
-### Khôi phục
-
-1. Mở tab `Tổng quan`.
-2. Nhấn `Khôi phục DB`.
-3. Chọn file `.db`, `.sqlite` hoặc `.backup`.
-4. Xác nhận khôi phục.
-
-Khi khôi phục, APE tự tạo một bản backup an toàn của database hiện tại trước khi ghi đè.
-
 ## Lưu thiết lập giao diện
 
-APE tự lưu các thiết lập sau vào `data\gui_preferences.json`:
+APE tự lưu các thiết lập sau vào `data/gui_preferences.json`:
 
 - Kích thước cửa sổ gần nhất.
 - Thư mục Excel mở gần nhất.
@@ -150,6 +145,12 @@ File báo cáo gồm các sheet:
 - `Kiem_tra`
 - `Bieu_do`
 
+## Sao lưu và khôi phục database
+
+- Bấm `Sao lưu DB` để tạo bản sao database hiện tại.
+- Bấm `Khôi phục DB` để chọn file `.db`, `.sqlite` hoặc `.backup`.
+- Khi khôi phục, APE tự tạo một bản sao an toàn trước khi ghi đè database hiện tại.
+
 ## Lệnh CMD vẫn được hỗ trợ
 
 ```text
@@ -171,4 +172,4 @@ Các thống kê trong APE chỉ mô tả dữ liệu lịch sử, không bảo 
 
 ## Bước tiếp theo
 
-Sprint 2.6 - Release ZIP, kiểm tra portable trên máy sạch và cải thiện giao diện biểu đồ.
+Sprint 3 - Data Management: nhật ký import, quản lý nhiều bộ dữ liệu, rà soát import trùng và merge dataset.

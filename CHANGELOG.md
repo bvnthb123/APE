@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## v1.0.0 - Portable Release & QA
+
+### Added
+- Portable release ZIP builder.
+- `make_release_zip.bat` one-command release packaging script.
+- User-facing quick-start guide.
+- Release notes.
+- Release QA checklist.
+- Release ZIP smoke tests.
+
+### Changed
+- Version updated to v1.0.0.
+- `.gitignore` now excludes generated release ZIP output.
+
 ## v0.9.0 - Release Polish & Backup
 
 ### Added

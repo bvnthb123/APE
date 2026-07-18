@@ -4,6 +4,7 @@ __pycache__/
 *.sqlite
 logs/
 reports/
+releases/
 .venv/
 .venv_build/
 venv/

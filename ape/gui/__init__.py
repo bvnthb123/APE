@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSpinBox,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -41,6 +42,7 @@ from ape.database.models import Draw
 from ape.database.repositories import DrawRepository
 from ape.gui.preferences import GuiPreferences
 from ape.importers.excel_importer import ExcelDrawImporter
+from ape.patterns.mining import PatternMiner
 from ape.release.backup import BackupManager
 from ape.reports.excel_exporter import ExcelReportExporter
 
@@ -95,7 +97,7 @@ QPushButton#SecondaryButton {
     color: #005BAC;
     border: 1px solid #9DBFDF;
 }
-QLineEdit, QDateEdit {
+QLineEdit, QDateEdit, QSpinBox {
     background: white;
     border: 1px solid #B8CCE0;
     border-radius: 6px;
@@ -333,6 +335,29 @@ class MainWindow(QMainWindow):
         "30 kỳ gần",
         "Xu hướng",
     )
+    SIGNAL_COLUMNS = (
+        "Hạng",
+        "Tín hiệu",
+        "Score",
+        "Support",
+        "Số rule",
+        "Lift TB",
+        "Lift max",
+        "Nguồn khớp",
+    )
+    RULE_COLUMNS = (
+        "Hạng",
+        "Nguồn N",
+        "Tín hiệu",
+        "Độ trễ",
+        "Nguồn xuất hiện",
+        "Cùng xuất hiện",
+        "Tỷ lệ ĐK",
+        "Tỷ lệ nền",
+        "Lift",
+        "Score",
+    )
+    BACKTEST_COLUMNS = ("Chỉ số", "Giá trị")
 
     def __init__(self, database: DatabaseManager | None = None) -> None:
         super().__init__()
@@ -342,6 +367,7 @@ class MainWindow(QMainWindow):
         self.analysis_service = AnalysisService(self.database)
         self.exporter = ExcelReportExporter(self.database)
         self.backup_manager = BackupManager()
+        self.pattern_miner = PatternMiner()
         self.preferences = GuiPreferences.load()
         self.current_draws: list[Draw] = []
         self.filtered_draws: list[Draw] = []
@@ -369,6 +395,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_dashboard_tab(), "Tổng quan")
         self.tabs.addTab(self._build_data_tab(), "Dữ liệu lịch sử")
         self.tabs.addTab(self._build_analysis_tab(), "Thống kê & kiểm tra")
+        self.tabs.addTab(self._build_pattern_tab(), "Pattern Mining")
         self.tabs.addTab(self._build_charts_tab(), "Biểu đồ")
         root_layout.addWidget(self.tabs, 1)
 
@@ -527,6 +554,65 @@ class MainWindow(QMainWindow):
         layout.addLayout(side_layout, 2)
         return tab
 
+    def _build_pattern_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(14, 14, 14, 14)
+
+        note = QLabel(
+            "Pattern Mining chỉ khai thác tín hiệu lịch sử N → N+lag và kiểm định ngược; "
+            "không phải cam kết hay bảo đảm cho kết quả tương lai."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #5E7184; font-style: italic;")
+        layout.addWidget(note)
+
+        control_row = QHBoxLayout()
+        control_row.addWidget(QLabel("Độ trễ N+"))
+        self.pattern_lag_spin = QSpinBox()
+        self.pattern_lag_spin.setRange(1, 10)
+        self.pattern_lag_spin.setValue(3)
+        control_row.addWidget(self.pattern_lag_spin)
+
+        control_row.addWidget(QLabel("Support tối thiểu"))
+        self.pattern_support_spin = QSpinBox()
+        self.pattern_support_spin.setRange(1, 50)
+        self.pattern_support_spin.setValue(3)
+        control_row.addWidget(self.pattern_support_spin)
+
+        control_row.addWidget(QLabel("Top tín hiệu"))
+        self.pattern_top_spin = QSpinBox()
+        self.pattern_top_spin.setRange(5, 20)
+        self.pattern_top_spin.setValue(10)
+        control_row.addWidget(self.pattern_top_spin)
+
+        run_button = QPushButton("Tính tín hiệu lịch sử")
+        run_button.clicked.connect(self.populate_pattern_lab)
+        control_row.addWidget(run_button)
+        control_row.addStretch()
+        layout.addLayout(control_row)
+
+        signal_title = QLabel("Top tín hiệu lịch sử từ kỳ dữ liệu cuối")
+        signal_title.setStyleSheet("font-size: 12pt; font-weight: 700;")
+        layout.addWidget(signal_title)
+        self.pattern_signal_table = self._create_table(self.SIGNAL_COLUMNS)
+        self.pattern_signal_table.setMaximumHeight(190)
+        layout.addWidget(self.pattern_signal_table)
+
+        backtest_title = QLabel("Backtest walk-forward")
+        backtest_title.setStyleSheet("font-size: 12pt; font-weight: 700;")
+        layout.addWidget(backtest_title)
+        self.pattern_backtest_table = self._create_table(self.BACKTEST_COLUMNS)
+        self.pattern_backtest_table.setMaximumHeight(185)
+        layout.addWidget(self.pattern_backtest_table)
+
+        rules_title = QLabel("Top rule lịch sử theo độ trễ")
+        rules_title.setStyleSheet("font-size: 12pt; font-weight: 700;")
+        layout.addWidget(rules_title)
+        self.pattern_rule_table = self._create_table(self.RULE_COLUMNS)
+        layout.addWidget(self.pattern_rule_table, 1)
+        return tab
+
     def _build_charts_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -581,6 +667,7 @@ class MainWindow(QMainWindow):
                 self.current_report = self.analysis_service.generate(limit=10)
                 self._populate_analysis()
                 self._populate_charts()
+                self.populate_pattern_lab(show_message=False)
             else:
                 self.filtered_draws = []
                 self.filtered_card.set_value("0/0")
@@ -598,6 +685,7 @@ class MainWindow(QMainWindow):
                 self.gap_chart.clear()
                 self.total_sum_chart.clear()
                 self.odd_even_chart.clear()
+                self._clear_pattern_lab()
 
             self.statusBar().showMessage(f"Đã tải {total} kỳ dữ liệu", 5000)
         except Exception as exc:
@@ -728,6 +816,55 @@ class MainWindow(QMainWindow):
             y_label="Số kỳ",
             x_label="Mẫu lẻ-chẵn",
         )
+
+    def populate_pattern_lab(self, show_message: bool = True) -> None:
+        if not self.current_draws:
+            self._clear_pattern_lab()
+            return
+
+        try:
+            lag = self.pattern_lag_spin.value()
+            min_support = self.pattern_support_spin.value()
+            top_n = self.pattern_top_spin.value()
+
+            signal_rows = self.pattern_miner.signal_rows(
+                self.current_draws,
+                lag=lag,
+                min_support=min_support,
+                top_n=top_n,
+            )
+            rule_rows = self.pattern_miner.rule_rows(
+                self.current_draws,
+                lag=lag,
+                min_support=min_support,
+                top_n=50,
+            )
+            backtest = self.pattern_miner.walk_forward_backtest(
+                self.current_draws,
+                lag=lag,
+                top_k=top_n,
+                min_support=min_support,
+                min_training_rows=60,
+            )
+
+            self._fill_table(self.pattern_signal_table, signal_rows)
+            self._fill_table(self.pattern_rule_table, rule_rows)
+            self._fill_table(self.pattern_backtest_table, backtest.to_rows())
+            if show_message:
+                self.statusBar().showMessage(
+                    f"Đã tính Pattern Mining N+{lag}: {len(signal_rows)} tín hiệu",
+                    5000,
+                )
+        except Exception as exc:
+            self._show_error("Không thể tính Pattern Mining", exc)
+
+    def _clear_pattern_lab(self) -> None:
+        for table in (
+            self.pattern_signal_table,
+            self.pattern_rule_table,
+            self.pattern_backtest_table,
+        ):
+            table.setRowCount(0)
 
     def import_excel(self) -> None:
         start_dir = self.preferences.last_excel_dir or str(Path.home())
@@ -913,8 +1050,8 @@ class MainWindow(QMainWindow):
                 f"Build: {BUILD_NAME}<br><br>"
                 "APE là ứng dụng desktop hỗ trợ nhập, kiểm tra, thống kê "
                 "và xuất báo cáo dữ liệu lịch sử.<br><br>"
-                "Các thống kê chỉ mô tả dữ liệu quá khứ, không phải cam kết "
-                "hay bảo đảm cho kết quả tương lai."
+                "Pattern Mining chỉ mô tả tín hiệu và kiểm định trong dữ liệu quá khứ; "
+                "không phải cam kết hay bảo đảm cho kết quả tương lai."
             ),
         )
 

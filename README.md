@@ -1,4 +1,4 @@
-# APE v1.0.0
+# APE v1.1.0
 
 Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch sử.
 
@@ -14,6 +14,7 @@ Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch
 - Sprint 2.4 - Interface Refinement
 - Sprint 2.5 - Release Polish & Backup
 - Sprint 2.6 - Release ZIP & QA
+- Sprint 3.1 - Pattern Mining & Backtest
 
 ## Cập nhật bản mới
 
@@ -59,7 +60,7 @@ make_release_zip.bat
 File ZIP nằm tại:
 
 ```text
-releases\APE-v1.0.0-portable.zip
+releases\APE-v1.1.0-portable.zip
 ```
 
 Đây là dạng portable folder. Người dùng cần giải nén ZIP và chạy `APE.exe`. Không copy riêng `APE.exe` ra ngoài thư mục.
@@ -105,6 +106,17 @@ releases\APE-v1.0.0-portable.zip
 - Thống kê 30 kỳ gần nhất.
 - Cặp và bộ ba đồng xuất hiện.
 - Dòng lỗi, ngày trùng, sai thứ và khoảng thời gian dữ liệu dài.
+
+### Pattern Mining
+
+- Tính rule lịch sử dạng `số ở kỳ N -> số ở kỳ N+lag`.
+- Chọn độ trễ từ `N+1` đến `N+10`.
+- Chọn support tối thiểu để lọc rule yếu.
+- Hiển thị Top tín hiệu lịch sử từ kỳ dữ liệu cuối.
+- Hiển thị Top rule lịch sử theo support, lift và score.
+- Chạy backtest walk-forward bằng dữ liệu cũ để xem tín hiệu lịch sử hoạt động ra sao.
+
+Lưu ý: Pattern Mining chỉ mô tả tín hiệu trong dữ liệu quá khứ và kiểm định ngược; không phải cam kết hay bảo đảm cho kết quả tương lai.
 
 ### Biểu đồ
 
@@ -172,4 +184,4 @@ Các thống kê trong APE chỉ mô tả dữ liệu lịch sử, không bảo 
 
 ## Bước tiếp theo
 
-Sprint 3 - Data Management: nhật ký import, quản lý nhiều bộ dữ liệu, rà soát import trùng và merge dataset.
+Sprint 3.2 - Pattern report export: xuất riêng báo cáo Pattern Mining, thêm biểu đồ lift/support và so sánh nhiều độ trễ.

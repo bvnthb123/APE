@@ -85,8 +85,31 @@ Delivered:
 - QA checklist.
 - Release ZIP smoke tests.
 
-## Sprint 3 - Data Management
+## Sprint 3 - Historical Pattern Research
+
+### Sprint 3.1 - Pattern Mining & Backtest
+Status: Completed in v1.1.0
+
+Delivered:
+- Lagged value-to-value historical rules for `N -> N+lag`.
+- Top signal ranking from the latest known historical row.
+- Support, conditional rate, baseline rate, lift and score metrics.
+- Walk-forward backtest using only data known at each historical point.
+- Desktop GUI Pattern Mining tab.
+- Pattern mining automated tests.
+
+### Sprint 3.2 - Pattern Report Export
 Status: Next
+
+Planned scope:
+- Export Pattern Mining report to Excel.
+- Compare multiple lags side by side.
+- Add lift/support charts.
+- Add rule detail drilldown.
+- Add benchmark against random selection.
+
+## Sprint 4 - Data Management
+Status: Pending
 
 Planned scope:
 - Import history log.

@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## v1.1.0 - Pattern Mining & Backtest
+
+### Added
+- Historical lagged pattern-mining engine.
+- Value-to-value transition rules for `N -> N+lag`.
+- Aggregated Top signal ranking from the latest known historical row.
+- Walk-forward backtest summary for historical signal ranking.
+- Pattern Mining tab in the desktop GUI.
+- GUI controls for lag, minimum support and Top K signals.
+- Automated tests for pattern rules, current signals and backtest execution.
+
+### Changed
+- Version updated to v1.1.0.
+- About dialog now clarifies that Pattern Mining describes historical signals only.
+
 ## v1.0.0 - Portable Release & QA
 
 ### Added

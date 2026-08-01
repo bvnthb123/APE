@@ -9,6 +9,12 @@ from ape.patterns.mining import (
     RepeatOverlapSummary,
     StructureProfile,
 )
+from ape.patterns.optimizer import (
+    StrategyConfig,
+    StrategyEvaluation,
+    StrategyOptimizationResult,
+    StrategyOptimizer,
+)
 
 __all__ = [
     "BacktestSummary",
@@ -17,5 +23,9 @@ __all__ = [
     "PatternMiner",
     "PatternRule",
     "RepeatOverlapSummary",
+    "StrategyConfig",
+    "StrategyEvaluation",
+    "StrategyOptimizationResult",
+    "StrategyOptimizer",
     "StructureProfile",
 ]

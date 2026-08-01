@@ -7,11 +7,82 @@ outputs as predictions and does not claim future results are knowable.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from math import floor
 from statistics import mean
-from typing import Iterable, Sequence
+from typing import Sequence
 
 from ape.database.models import Draw
+
+RANGE_BANDS: tuple[tuple[int, int, str], ...] = (
+    (1, 9, "01-09"),
+    (10, 20, "10-20"),
+    (21, 30, "21-30"),
+    (31, 40, "31-40"),
+    (41, 45, "41-45"),
+)
+DRAW_SIZE = 6
+
+
+@dataclass(slots=True, frozen=True)
+class DrawStructure:
+    """Structural fingerprint of one historical row."""
+
+    odd_count: int
+    even_count: int
+    band_counts: tuple[int, ...]
+
+    @property
+    def parity_label(self) -> str:
+        return f"{self.odd_count} lẻ / {self.even_count} chẵn"
+
+    @property
+    def band_label(self) -> str:
+        return " | ".join(
+            f"{label}: {count}"
+            for (_, _, label), count in zip(RANGE_BANDS, self.band_counts)
+        )
+
+
+@dataclass(slots=True, frozen=True)
+class StructureProfile:
+    """Historical distribution of row-level structures."""
+
+    draw_count: int
+    average_odd: float
+    average_even: float
+    average_band_counts: tuple[float, ...]
+    modal_odd_even: tuple[int, int]
+    modal_band_counts: tuple[int, ...]
+    parity_distribution: dict[tuple[int, int], int] = field(default_factory=dict)
+    band_distribution: dict[tuple[int, ...], int] = field(default_factory=dict)
+
+    @property
+    def parity_label(self) -> str:
+        odd, even = self.modal_odd_even
+        return f"{odd} lẻ / {even} chẵn"
+
+    @property
+    def band_label(self) -> str:
+        return " | ".join(
+            f"{label}: {count}"
+            for (_, _, label), count in zip(RANGE_BANDS, self.modal_band_counts)
+        )
+
+    def to_rows(self) -> list[tuple[str, str]]:
+        return [
+            ("Số kỳ học cấu trúc", str(self.draw_count)),
+            ("Mẫu lẻ/chẵn lặp nhiều", self.parity_label),
+            ("Trung bình lẻ/chẵn", f"{self.average_odd:.2f} lẻ / {self.average_even:.2f} chẵn"),
+            ("Mẫu phân vùng lặp nhiều", self.band_label),
+            (
+                "Trung bình phân vùng",
+                " | ".join(
+                    f"{label}: {value:.2f}"
+                    for (_, _, label), value in zip(RANGE_BANDS, self.average_band_counts)
+                ),
+            ),
+        ]
 
 
 @dataclass(slots=True, frozen=True)
@@ -55,6 +126,7 @@ class CandidateSignal:
     average_lift: float
     max_lift: float
     matched_sources: tuple[int, ...]
+    structure_weight: float = 1.0
 
     def to_row(self, rank: int) -> tuple[str, ...]:
         sources = ", ".join(f"{value:02d}" for value in self.matched_sources)
@@ -83,11 +155,17 @@ class BacktestSummary:
     max_hits: int
     total_hits: int
     hit_distribution: dict[int, int] = field(default_factory=dict)
+    structure_enabled: bool = True
+    parity_reference: str = ""
+    band_reference: str = ""
 
     def to_rows(self) -> list[tuple[str, str]]:
-        return [
+        rows = [
             ("Độ trễ", f"N+{self.lag}"),
             ("Top K", str(self.top_k)),
+            ("Cân bằng cấu trúc", "Có" if self.structure_enabled else "Không"),
+            ("Mẫu lẻ/chẵn tham chiếu", self.parity_reference or "-"),
+            ("Mẫu phân vùng tham chiếu", self.band_reference or "-"),
             ("Số kỳ kiểm định", str(self.tested_rows)),
             ("Số khớp trung bình", f"{self.average_hits:.3f}"),
             ("Tỷ lệ có ít nhất 1 số khớp", f"{self.one_plus_hit_rate * 100:.2f}%"),
@@ -102,6 +180,7 @@ class BacktestSummary:
                 ),
             ),
         ]
+        return rows
 
 
 class PatternMiner:
@@ -114,6 +193,67 @@ class PatternMiner:
     @staticmethod
     def values(draw: Draw) -> tuple[int, ...]:
         return tuple(int(value) for value in draw.numbers)
+
+    @staticmethod
+    def band_index(value: int) -> int:
+        for index, (start, end, _) in enumerate(RANGE_BANDS):
+            if start <= value <= end:
+                return index
+        raise ValueError(f"value is outside supported range: {value}")
+
+    def draw_structure(self, draw: Draw) -> DrawStructure:
+        values = self.values(draw)
+        odd_count = sum(value % 2 for value in values)
+        band_counts = [0 for _ in RANGE_BANDS]
+        for value in values:
+            band_counts[self.band_index(value)] += 1
+        return DrawStructure(
+            odd_count=odd_count,
+            even_count=len(values) - odd_count,
+            band_counts=tuple(band_counts),
+        )
+
+    def build_structure_profile(
+        self,
+        draws: Sequence[Draw],
+        *,
+        lag: int = 0,
+    ) -> StructureProfile:
+        """Learn repeated odd/even and number-zone structures from history."""
+        if lag < 0:
+            raise ValueError("lag must not be negative")
+        target_draws = list(draws[lag:]) if lag else list(draws)
+        if not target_draws:
+            return StructureProfile(
+                draw_count=0,
+                average_odd=0.0,
+                average_even=0.0,
+                average_band_counts=tuple(0.0 for _ in RANGE_BANDS),
+                modal_odd_even=(0, 0),
+                modal_band_counts=tuple(0 for _ in RANGE_BANDS),
+            )
+
+        structures = [self.draw_structure(draw) for draw in target_draws]
+        parity_counter: Counter[tuple[int, int]] = Counter(
+            (item.odd_count, item.even_count) for item in structures
+        )
+        band_counter: Counter[tuple[int, ...]] = Counter(item.band_counts for item in structures)
+        modal_odd_even = parity_counter.most_common(1)[0][0]
+        modal_band_counts = band_counter.most_common(1)[0][0]
+        average_bands = tuple(
+            mean(item.band_counts[index] for item in structures)
+            for index in range(len(RANGE_BANDS))
+        )
+        return StructureProfile(
+            draw_count=len(structures),
+            average_odd=mean(item.odd_count for item in structures),
+            average_even=mean(item.even_count for item in structures),
+            average_band_counts=average_bands,
+            modal_odd_even=modal_odd_even,
+            modal_band_counts=modal_band_counts,
+            parity_distribution=dict(parity_counter),
+            band_distribution=dict(band_counter),
+        )
 
     def compute_rules(
         self,
@@ -194,8 +334,14 @@ class PatternMiner:
         lag: int = 3,
         min_support: int = 2,
         top_n: int = 10,
+        use_structure: bool = True,
     ) -> list[CandidateSignal]:
-        """Aggregate historical rules that match the latest known draw."""
+        """Aggregate historical rules that match the latest known draw.
+
+        When structure learning is enabled, scores are adjusted by historical
+        odd/even and number-zone tendencies, then the final Top K list is
+        balanced toward the learned structural profile.
+        """
         if not draws:
             return []
 
@@ -220,18 +366,23 @@ class PatternMiner:
             lifts_by_target[rule.target_value].append(rule.lift)
             sources_by_target[rule.target_value].add(rule.source_value)
 
+        profile = self.build_structure_profile(draws, lag=lag)
         signals: list[CandidateSignal] = []
         for target, score in score_by_target.items():
             lifts = lifts_by_target[target]
+            structure_weight = (
+                self.structure_weight(target, profile) if use_structure else 1.0
+            )
             signals.append(
                 CandidateSignal(
                     value=target,
-                    score=score,
+                    score=score * structure_weight,
                     support=support_by_target[target],
                     rule_count=len(lifts),
                     average_lift=mean(lifts) if lifts else 0.0,
                     max_lift=max(lifts) if lifts else 0.0,
                     matched_sources=tuple(sorted(sources_by_target[target])),
+                    structure_weight=structure_weight,
                 )
             )
 
@@ -244,7 +395,103 @@ class PatternMiner:
             ),
             reverse=True,
         )
-        return signals[:top_n]
+        if not use_structure:
+            return signals[:top_n]
+        return self.balance_signals_by_structure(signals, profile, top_n=top_n)
+
+    def structure_weight(self, value: int, profile: StructureProfile) -> float:
+        """Return a conservative score weight from parity and band tendency."""
+        if profile.draw_count <= 0:
+            return 1.0
+
+        odd_ratio = profile.average_odd / DRAW_SIZE
+        even_ratio = profile.average_even / DRAW_SIZE
+        parity_ratio = odd_ratio if value % 2 else even_ratio
+        parity_uniform = 0.5
+
+        band = self.band_index(value)
+        band_start, band_end, _ = RANGE_BANDS[band]
+        band_size = band_end - band_start + 1
+        band_ratio = profile.average_band_counts[band] / DRAW_SIZE
+        band_uniform = band_size / (self.value_max - self.value_min + 1)
+
+        parity_factor = (parity_ratio - parity_uniform) / parity_uniform
+        band_factor = (band_ratio - band_uniform) / band_uniform if band_uniform else 0.0
+        weight = 1.0 + 0.20 * parity_factor + 0.30 * band_factor
+        return min(1.8, max(0.5, weight))
+
+    def balance_signals_by_structure(
+        self,
+        signals: Sequence[CandidateSignal],
+        profile: StructureProfile,
+        *,
+        top_n: int,
+    ) -> list[CandidateSignal]:
+        """Select Top K while approximating learned parity and band quotas."""
+        if top_n <= 0:
+            return []
+        if not signals or profile.draw_count <= 0:
+            return list(signals[:top_n])
+
+        parity_quota = self.integer_quota(
+            top_n,
+            (profile.average_odd, profile.average_even),
+        )
+        band_quota = self.integer_quota(top_n, profile.average_band_counts)
+
+        selected: list[CandidateSignal] = []
+        selected_values: set[int] = set()
+        parity_counts = [0, 0]  # index 0 = odd, index 1 = even
+        band_counts = [0 for _ in RANGE_BANDS]
+
+        for signal in signals:
+            if len(selected) >= top_n:
+                break
+            parity_index = 0 if signal.value % 2 else 1
+            band = self.band_index(signal.value)
+            if parity_counts[parity_index] >= parity_quota[parity_index]:
+                continue
+            if band_counts[band] >= band_quota[band]:
+                continue
+            selected.append(signal)
+            selected_values.add(signal.value)
+            parity_counts[parity_index] += 1
+            band_counts[band] += 1
+
+        for signal in signals:
+            if len(selected) >= top_n:
+                break
+            if signal.value in selected_values:
+                continue
+            selected.append(signal)
+            selected_values.add(signal.value)
+
+        return selected
+
+    @staticmethod
+    def integer_quota(total: int, weights: Sequence[float]) -> list[int]:
+        """Convert fractional weights into integer quotas that sum to total."""
+        if total <= 0:
+            return [0 for _ in weights]
+        weight_sum = sum(weights)
+        if weight_sum <= 0:
+            base = total // len(weights)
+            quotas = [base for _ in weights]
+            for index in range(total - sum(quotas)):
+                quotas[index % len(quotas)] += 1
+            return quotas
+
+        raw = [total * weight / weight_sum for weight in weights]
+        quotas = [floor(value) for value in raw]
+        remainder = total - sum(quotas)
+        fractions = sorted(
+            enumerate(raw),
+            key=lambda item: item[1] - floor(item[1]),
+            reverse=True,
+        )
+        for index, _ in fractions[:remainder]:
+            quotas[index] += 1
+        return quotas
 
     def walk_forward_backtest(
         self,
@@ -254,6 +501,7 @@ class PatternMiner:
         top_k: int = 10,
         min_support: int = 2,
         min_training_rows: int = 60,
+        use_structure: bool = True,
     ) -> BacktestSummary:
         """Walk-forward backtest using only data known at each historical point."""
         if lag < 1:
@@ -261,6 +509,7 @@ class PatternMiner:
         if top_k < 1:
             raise ValueError("top_k must be at least 1")
 
+        profile = self.build_structure_profile(draws, lag=lag)
         last_anchor = len(draws) - lag
         if last_anchor <= min_training_rows:
             return BacktestSummary(
@@ -273,6 +522,9 @@ class PatternMiner:
                 max_hits=0,
                 total_hits=0,
                 hit_distribution={},
+                structure_enabled=use_structure,
+                parity_reference=profile.parity_label,
+                band_reference=profile.band_label,
             )
 
         hits_per_row: list[int] = []
@@ -283,6 +535,7 @@ class PatternMiner:
                 lag=lag,
                 min_support=min_support,
                 top_n=top_k,
+                use_structure=use_structure,
             )
             selected = {candidate.value for candidate in candidates}
             actual = set(self.values(draws[anchor_index + lag]))
@@ -303,6 +556,9 @@ class PatternMiner:
             max_hits=max(hits_per_row) if hits_per_row else 0,
             total_hits=total_hits,
             hit_distribution=distribution,
+            structure_enabled=use_structure,
+            parity_reference=profile.parity_label,
+            band_reference=profile.band_label,
         )
 
     def signal_rows(
@@ -312,6 +568,7 @@ class PatternMiner:
         lag: int = 3,
         min_support: int = 2,
         top_n: int = 10,
+        use_structure: bool = True,
     ) -> list[tuple[str, ...]]:
         return [
             signal.to_row(rank)
@@ -321,6 +578,7 @@ class PatternMiner:
                     lag=lag,
                     min_support=min_support,
                     top_n=top_n,
+                    use_structure=use_structure,
                 ),
                 1,
             )
@@ -346,3 +604,11 @@ class PatternMiner:
                 1,
             )
         ]
+
+    def structure_rows(
+        self,
+        draws: Sequence[Draw],
+        *,
+        lag: int = 3,
+    ) -> list[tuple[str, str]]:
+        return self.build_structure_profile(draws, lag=lag).to_rows()

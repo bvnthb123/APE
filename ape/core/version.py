@@ -2,6 +2,6 @@
 
 APP_NAME = "Adaptive Prediction Engine"
 APP_CODE = "APE"
-VERSION = "1.3.0"
-BUILD_NAME = "Repeat Overlap Learning"
+VERSION = "1.4.0"
+BUILD_NAME = "Strategy Optimizer"
 AUTHOR = "Nguyen Thanh Chung + ChatGPT"

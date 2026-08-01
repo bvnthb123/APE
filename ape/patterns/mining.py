@@ -7,7 +7,7 @@ outputs as predictions and does not claim future results are knowable.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from math import floor
 from statistics import mean
 from typing import Sequence
@@ -86,6 +86,41 @@ class StructureProfile:
 
 
 @dataclass(slots=True, frozen=True)
+class RepeatOverlapSummary:
+    """How often values in draw N appear again in draw N+lag."""
+
+    lag: int
+    compared_rows: int
+    average_overlap: float
+    modal_overlap: int
+    zero_overlap_rate: float
+    one_plus_overlap_rate: float
+    two_plus_overlap_rate: float
+    overlap_distribution: dict[int, int] = field(default_factory=dict)
+
+    @property
+    def distribution_label(self) -> str:
+        if not self.overlap_distribution:
+            return "-"
+        return ", ".join(
+            f"{overlap} số: {count} kỳ"
+            for overlap, count in sorted(self.overlap_distribution.items())
+        )
+
+    def to_rows(self) -> list[tuple[str, str]]:
+        return [
+            ("Độ lặp đang học", f"N+{self.lag}"),
+            ("Số cặp kỳ đã so sánh", str(self.compared_rows)),
+            ("Số trùng trung bình giữa N và N+lag", f"{self.average_overlap:.3f}"),
+            ("Mức trùng lặp lại nhiều nhất", f"{self.modal_overlap} số"),
+            ("Tỷ lệ không trùng số nào", f"{self.zero_overlap_rate * 100:.2f}%"),
+            ("Tỷ lệ trùng ít nhất 1 số", f"{self.one_plus_overlap_rate * 100:.2f}%"),
+            ("Tỷ lệ trùng ít nhất 2 số", f"{self.two_plus_overlap_rate * 100:.2f}%"),
+            ("Phân bố độ trùng", self.distribution_label),
+        ]
+
+
+@dataclass(slots=True, frozen=True)
 class PatternRule:
     """A historical transition rule from one value to another after a lag."""
 
@@ -127,6 +162,7 @@ class CandidateSignal:
     max_lift: float
     matched_sources: tuple[int, ...]
     structure_weight: float = 1.0
+    repeat_weight: float = 1.0
 
     def to_row(self, rank: int) -> tuple[str, ...]:
         sources = ", ".join(f"{value:02d}" for value in self.matched_sources)
@@ -156,14 +192,17 @@ class BacktestSummary:
     total_hits: int
     hit_distribution: dict[int, int] = field(default_factory=dict)
     structure_enabled: bool = True
+    repeat_enabled: bool = True
     parity_reference: str = ""
     band_reference: str = ""
+    repeat_overlap: RepeatOverlapSummary | None = None
 
     def to_rows(self) -> list[tuple[str, str]]:
         rows = [
             ("Độ trễ", f"N+{self.lag}"),
             ("Top K", str(self.top_k)),
             ("Cân bằng cấu trúc", "Có" if self.structure_enabled else "Không"),
+            ("Học độ lặp N→N+lag", "Có" if self.repeat_enabled else "Không"),
             ("Mẫu lẻ/chẵn tham chiếu", self.parity_reference or "-"),
             ("Mẫu phân vùng tham chiếu", self.band_reference or "-"),
             ("Số kỳ kiểm định", str(self.tested_rows)),
@@ -180,6 +219,8 @@ class BacktestSummary:
                 ),
             ),
         ]
+        if self.repeat_overlap is not None:
+            rows.extend(self.repeat_overlap.to_rows())
         return rows
 
 
@@ -253,6 +294,52 @@ class PatternMiner:
             modal_band_counts=modal_band_counts,
             parity_distribution=dict(parity_counter),
             band_distribution=dict(band_counter),
+        )
+
+    def compute_repeat_overlap(
+        self,
+        draws: Sequence[Draw],
+        *,
+        lag: int = 3,
+    ) -> RepeatOverlapSummary:
+        """Compute how many values repeat from draw N to draw N+lag."""
+        if lag < 1:
+            raise ValueError("lag must be at least 1")
+        if len(draws) <= lag:
+            return RepeatOverlapSummary(
+                lag=lag,
+                compared_rows=0,
+                average_overlap=0.0,
+                modal_overlap=0,
+                zero_overlap_rate=0.0,
+                one_plus_overlap_rate=0.0,
+                two_plus_overlap_rate=0.0,
+                overlap_distribution={},
+            )
+
+        overlaps: list[int] = []
+        for index in range(len(draws) - lag):
+            source_values = set(self.values(draws[index]))
+            target_values = set(self.values(draws[index + lag]))
+            overlaps.append(len(source_values & target_values))
+
+        distribution = Counter(overlaps)
+        highest_frequency = max(distribution.values())
+        modal_overlap = min(
+            overlap
+            for overlap, count in distribution.items()
+            if count == highest_frequency
+        )
+        compared_rows = len(overlaps)
+        return RepeatOverlapSummary(
+            lag=lag,
+            compared_rows=compared_rows,
+            average_overlap=sum(overlaps) / compared_rows if compared_rows else 0.0,
+            modal_overlap=modal_overlap,
+            zero_overlap_rate=distribution.get(0, 0) / compared_rows,
+            one_plus_overlap_rate=sum(1 for value in overlaps if value >= 1) / compared_rows,
+            two_plus_overlap_rate=sum(1 for value in overlaps if value >= 2) / compared_rows,
+            overlap_distribution=dict(distribution),
         )
 
     def compute_rules(
@@ -335,12 +422,15 @@ class PatternMiner:
         min_support: int = 2,
         top_n: int = 10,
         use_structure: bool = True,
+        use_repeat_overlap: bool = True,
     ) -> list[CandidateSignal]:
         """Aggregate historical rules that match the latest known draw.
 
         When structure learning is enabled, scores are adjusted by historical
         odd/even and number-zone tendencies, then the final Top K list is
-        balanced toward the learned structural profile.
+        balanced toward the learned structural profile. When repeat-overlap
+        learning is enabled, values from the latest row receive a conservative
+        boost if the selected lag historically tends to repeat values from N.
         """
         if not draws:
             return []
@@ -367,22 +457,29 @@ class PatternMiner:
             sources_by_target[rule.target_value].add(rule.source_value)
 
         profile = self.build_structure_profile(draws, lag=lag)
+        overlap = self.compute_repeat_overlap(draws, lag=lag)
         signals: list[CandidateSignal] = []
         for target, score in score_by_target.items():
             lifts = lifts_by_target[target]
             structure_weight = (
                 self.structure_weight(target, profile) if use_structure else 1.0
             )
+            repeat_weight = (
+                self.repeat_overlap_weight(target, latest_values, overlap)
+                if use_repeat_overlap
+                else 1.0
+            )
             signals.append(
                 CandidateSignal(
                     value=target,
-                    score=score * structure_weight,
+                    score=score * structure_weight * repeat_weight,
                     support=support_by_target[target],
                     rule_count=len(lifts),
                     average_lift=mean(lifts) if lifts else 0.0,
                     max_lift=max(lifts) if lifts else 0.0,
                     matched_sources=tuple(sorted(sources_by_target[target])),
                     structure_weight=structure_weight,
+                    repeat_weight=repeat_weight,
                 )
             )
 
@@ -398,6 +495,23 @@ class PatternMiner:
         if not use_structure:
             return signals[:top_n]
         return self.balance_signals_by_structure(signals, profile, top_n=top_n)
+
+    def repeat_overlap_weight(
+        self,
+        value: int,
+        latest_values: set[int],
+        overlap: RepeatOverlapSummary,
+    ) -> float:
+        """Boost latest-row values when the chosen lag historically repeats."""
+        if value not in latest_values or overlap.compared_rows <= 0:
+            return 1.0
+        expected_overlap_ratio = overlap.average_overlap / DRAW_SIZE
+        base_boost = min(0.35, expected_overlap_ratio * 1.5)
+        consistency_boost = min(
+            0.15,
+            max(0.0, overlap.one_plus_overlap_rate - 0.50) * 0.30,
+        )
+        return 1.0 + base_boost + consistency_boost
 
     def structure_weight(self, value: int, profile: StructureProfile) -> float:
         """Return a conservative score weight from parity and band tendency."""
@@ -502,6 +616,7 @@ class PatternMiner:
         min_support: int = 2,
         min_training_rows: int = 60,
         use_structure: bool = True,
+        use_repeat_overlap: bool = True,
     ) -> BacktestSummary:
         """Walk-forward backtest using only data known at each historical point."""
         if lag < 1:
@@ -510,6 +625,7 @@ class PatternMiner:
             raise ValueError("top_k must be at least 1")
 
         profile = self.build_structure_profile(draws, lag=lag)
+        overlap = self.compute_repeat_overlap(draws, lag=lag)
         last_anchor = len(draws) - lag
         if last_anchor <= min_training_rows:
             return BacktestSummary(
@@ -523,8 +639,10 @@ class PatternMiner:
                 total_hits=0,
                 hit_distribution={},
                 structure_enabled=use_structure,
+                repeat_enabled=use_repeat_overlap,
                 parity_reference=profile.parity_label,
                 band_reference=profile.band_label,
+                repeat_overlap=overlap,
             )
 
         hits_per_row: list[int] = []
@@ -536,6 +654,7 @@ class PatternMiner:
                 min_support=min_support,
                 top_n=top_k,
                 use_structure=use_structure,
+                use_repeat_overlap=use_repeat_overlap,
             )
             selected = {candidate.value for candidate in candidates}
             actual = set(self.values(draws[anchor_index + lag]))
@@ -557,8 +676,10 @@ class PatternMiner:
             total_hits=total_hits,
             hit_distribution=distribution,
             structure_enabled=use_structure,
+            repeat_enabled=use_repeat_overlap,
             parity_reference=profile.parity_label,
             band_reference=profile.band_label,
+            repeat_overlap=overlap,
         )
 
     def signal_rows(
@@ -568,7 +689,6 @@ class PatternMiner:
         lag: int = 3,
         min_support: int = 2,
         top_n: int = 10,
-        use_structure: bool = True,
     ) -> list[tuple[str, ...]]:
         return [
             signal.to_row(rank)
@@ -578,7 +698,6 @@ class PatternMiner:
                     lag=lag,
                     min_support=min_support,
                     top_n=top_n,
-                    use_structure=use_structure,
                 ),
                 1,
             )
@@ -605,10 +724,25 @@ class PatternMiner:
             )
         ]
 
-    def structure_rows(
+    def repeat_overlap_rows(
         self,
         draws: Sequence[Draw],
         *,
-        lag: int = 3,
-    ) -> list[tuple[str, str]]:
-        return self.build_structure_profile(draws, lag=lag).to_rows()
+        max_lag: int = 10,
+    ) -> list[tuple[str, ...]]:
+        rows: list[tuple[str, ...]] = []
+        for lag in range(1, max_lag + 1):
+            summary = self.compute_repeat_overlap(draws, lag=lag)
+            rows.append(
+                (
+                    f"N+{lag}",
+                    str(summary.compared_rows),
+                    f"{summary.average_overlap:.3f}",
+                    str(summary.modal_overlap),
+                    f"{summary.zero_overlap_rate * 100:.2f}%",
+                    f"{summary.one_plus_overlap_rate * 100:.2f}%",
+                    f"{summary.two_plus_overlap_rate * 100:.2f}%",
+                    summary.distribution_label,
+                )
+            )
+        return rows

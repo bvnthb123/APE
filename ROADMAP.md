@@ -98,7 +98,18 @@ Delivered:
 - Desktop GUI Pattern Mining tab.
 - Pattern mining automated tests.
 
-### Sprint 3.2 - Pattern Report Export
+### Sprint 3.2 - Structural Pattern Learning
+Status: Completed in v1.2.0
+
+Delivered:
+- Odd/even pattern learning.
+- Number-zone pattern learning for `01-09`, `10-20`, `21-30`, `31-40`, `41-45`.
+- Structure-adjusted signal scoring.
+- Structure-balanced Top K selection.
+- Backtest summary rows for reference parity and zone patterns.
+- Structural pattern automated tests.
+
+### Sprint 3.3 - Pattern Report Export
 Status: Next
 
 Planned scope:

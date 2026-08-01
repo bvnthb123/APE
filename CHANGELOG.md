@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## v1.3.0 - Repeat Overlap Learning
+
+### Added
+- Repeat-overlap learning for `N -> N+lag`.
+- Historical summary of how many values repeat between draw N and draw N+lag.
+- Metrics for average overlap, modal overlap, zero-overlap rate, one-plus-overlap rate and two-plus-overlap rate.
+- Conservative repeat-overlap score boost for latest-row values when the selected lag historically tends to repeat.
+- Backtest rows now include repeat-overlap learning details.
+- Automated tests for repeat-overlap calculation, repeat weighting and backtest display rows.
+
+### Changed
+- Version updated to v1.3.0.
+- Pattern Mining signal scoring now combines value-to-value rules, structural learning and repeat-overlap learning.
+
 ## v1.2.0 - Structural Pattern Learning
 
 ### Added

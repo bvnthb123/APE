@@ -7,7 +7,9 @@ import argparse
 from ape.analytics.service import AnalysisService
 from ape.core.app import APEApplication
 from ape.core.exceptions import APEError
+from ape.database.repositories import DrawRepository
 from ape.importers.excel_importer import ExcelDrawImporter
+from ape.patterns import StrategyOptimizer
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,6 +63,35 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="In toàn bộ báo cáo dưới dạng JSON.",
     )
+
+    optimize_parser = subparsers.add_parser(
+        "optimize",
+        help="So sánh nhiều chiến lược Pattern Mining bằng backtest.",
+    )
+    optimize_parser.add_argument(
+        "--lag",
+        type=int,
+        default=3,
+        help="Độ trễ kiểm định, ví dụ 3 nghĩa là N+3.",
+    )
+    optimize_parser.add_argument(
+        "--top",
+        type=int,
+        default=10,
+        help="Số tín hiệu lấy ra để kiểm định.",
+    )
+    optimize_parser.add_argument(
+        "--support",
+        type=int,
+        default=3,
+        help="Support tối thiểu gốc. Optimizer sẽ thử thêm các biến thể quanh mức này.",
+    )
+    optimize_parser.add_argument(
+        "--training-rows",
+        type=int,
+        default=60,
+        help="Số kỳ đầu dùng làm vùng học ban đầu khi backtest walk-forward.",
+    )
     return parser
 
 
@@ -103,6 +134,30 @@ def print_analysis(report) -> None:
     print("================================================\n")
 
 
+def print_strategy_optimization(app: APEApplication, args: argparse.Namespace) -> None:
+    with app.database.session() as session:
+        draws = DrawRepository(session).list_chronological()
+
+    optimizer = StrategyOptimizer()
+    result = optimizer.optimize(
+        draws,
+        lag=args.lag,
+        top_k=args.top,
+        base_min_support=args.support,
+        min_training_rows=args.training_rows,
+    )
+
+    print("\n================ STRATEGY OPTIMIZER ================")
+    for name, value in result.to_rows():
+        print(f"{name}: {value}")
+
+    signals = result.latest_signals(optimizer.miner, draws)
+    signal_values = " - ".join(f"{signal.value:02d}" for signal in signals)
+    print("\nTop tín hiệu theo phương án tốt nhất:")
+    print(signal_values or "Chưa đủ dữ liệu")
+    print("====================================================\n")
+
+
 def launch_gui() -> int:
     try:
         from ape.gui import run_gui
@@ -142,6 +197,8 @@ def main() -> int:
                 print(report.to_json())
             else:
                 print_analysis(report)
+        elif args.command == "optimize":
+            print_strategy_optimization(app, args)
         else:
             print_status(app)
 

@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## v1.2.0 - Structural Pattern Learning
+
+### Added
+- Row-level structural profile for historical draws.
+- Odd/even structure learning for Pattern Mining.
+- Number-zone learning for `01-09`, `10-20`, `21-30`, `31-40`, `41-45`.
+- Structure-adjusted signal scoring.
+- Structure-balanced Top K selection.
+- Backtest rows now show the reference parity and range-zone pattern.
+- Automated tests for structural profile, range weighting and quota balancing.
+
+### Changed
+- Version updated to v1.2.0.
+- Pattern Mining signal ranking now uses both value-to-value rules and learned row structure.
+
 ## v1.1.0 - Pattern Mining & Backtest
 
 ### Added

@@ -1,6 +1,6 @@
 # Hướng dẫn sử dụng nhanh APE
 
-APE là ứng dụng desktop dùng để nhập file Excel dữ liệu lịch sử, kiểm tra dữ liệu, xem bảng thống kê, khai thác tín hiệu lịch sử, xem biểu đồ và xuất báo cáo Excel.
+APE là ứng dụng desktop dùng để nhập file Excel dữ liệu lịch sử, kiểm tra dữ liệu, xem bảng thống kê, xem biểu đồ, xem tín hiệu lịch sử và xuất báo cáo Excel.
 
 ## Cách mở ứng dụng
 
@@ -31,26 +31,21 @@ Vào tab `Dữ liệu lịch sử`:
 
 ## Pattern Mining
 
-Vào tab `Pattern Mining` để khai thác tín hiệu lịch sử dạng:
+Vào tab `Pattern Mining`:
 
-```text
-số ở kỳ N -> số ở kỳ N+lag
-```
-
-Cách dùng:
-
-1. Chọn `Độ trễ N+`, ví dụ N+1, N+2 hoặc N+3.
-2. Chọn `Support tối thiểu` để lọc các rule yếu.
-3. Chọn số lượng `Top tín hiệu`.
+1. Chọn `Độ trễ N+`.
+2. Chọn `Support tối thiểu`.
+3. Chọn `Top tín hiệu`.
 4. Bấm `Tính tín hiệu lịch sử`.
 
-Tab này hiển thị:
+APE sẽ tính tín hiệu bằng hai lớp:
 
-- Top tín hiệu lịch sử từ kỳ dữ liệu cuối.
-- Backtest walk-forward trên các kỳ cũ.
-- Top rule lịch sử theo độ trễ, support, lift và score.
+- Rule số đơn lẻ dạng `số ở kỳ N -> số ở kỳ N+lag`.
+- Cấu trúc dãy gồm lẻ/chẵn và phân vùng số `01-09`, `10-20`, `21-30`, `31-40`, `41-45`.
 
-Lưu ý: đây là công cụ nghiên cứu tín hiệu lịch sử và kiểm định ngược; không phải cam kết hay bảo đảm cho kết quả tương lai.
+Bảng `Top tín hiệu lịch sử từ kỳ dữ liệu cuối` là danh sách tín hiệu được chấm điểm theo cả rule lịch sử và cấu trúc dãy.
+
+Bảng `Backtest walk-forward` cho biết các tín hiệu đó từng hoạt động thế nào khi kiểm định ngược trên dữ liệu cũ.
 
 ## Xuất báo cáo Excel
 
@@ -80,4 +75,4 @@ Trước khi khôi phục, APE tự tạo một bản sao an toàn của databas
 
 ## Lưu ý
 
-Các thống kê và Pattern Mining trong APE chỉ mô tả dữ liệu lịch sử. Ứng dụng không cam kết và không bảo đảm bất kỳ kết quả tương lai nào.
+Các thống kê và tín hiệu trong APE chỉ mô tả dữ liệu lịch sử. Ứng dụng không cam kết và không bảo đảm bất kỳ kết quả tương lai nào.

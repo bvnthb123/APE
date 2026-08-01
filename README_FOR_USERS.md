@@ -42,11 +42,29 @@ APE sẽ tính tín hiệu bằng ba lớp:
 
 - Rule số đơn lẻ dạng `số ở kỳ N -> số ở kỳ N+lag`.
 - Cấu trúc dãy gồm lẻ/chẵn và phân vùng số `01-09`, `10-20`, `21-30`, `31-40`, `41-45`.
-- Độ lặp số giữa kỳ `N` và kỳ `N+lag`, ví dụ kỳ `N+3` thường trùng 0, 1, 2 hay nhiều số so với kỳ N.
+- Độ lặp giữa kỳ N và kỳ N+lag để xem có thường trùng lại 1 số hoặc nhiều số hay không.
 
-Bảng `Top tín hiệu lịch sử từ kỳ dữ liệu cuối` là danh sách tín hiệu được chấm điểm theo rule lịch sử, cấu trúc dãy và độ lặp N→N+lag.
+Bảng `Top tín hiệu lịch sử từ kỳ dữ liệu cuối` là danh sách tín hiệu được chấm điểm theo rule lịch sử, cấu trúc dãy và độ lặp.
 
-Bảng `Backtest walk-forward` cho biết các tín hiệu đó từng hoạt động thế nào khi kiểm định ngược trên dữ liệu cũ. Bảng này cũng hiển thị thêm các dòng về độ lặp, như số trùng trung bình, tỷ lệ trùng ít nhất 1 số và phân bố số trùng giữa hai kỳ theo độ trễ đã chọn.
+Bảng `Backtest walk-forward` cho biết các tín hiệu đó từng hoạt động thế nào khi kiểm định ngược trên dữ liệu cũ.
+
+## Strategy Optimizer trong CMD
+
+Dùng khi muốn APE tự thử nhiều cách tính rồi chọn phương án có tỷ lệ lịch sử `trùng ít nhất 1 số` tốt nhất:
+
+```text
+py main.py optimize --lag 3 --top 10 --support 3
+```
+
+Optimizer sẽ tự so sánh nhiều phương án:
+
+- Rule thuần.
+- Rule + cấu trúc dãy.
+- Rule + độ lặp.
+- Rule + cấu trúc dãy + độ lặp.
+- Nhiều mức support quanh mức bạn chọn.
+
+Kết quả CMD sẽ in phương án tốt nhất, tỷ lệ trùng ít nhất 1 số, tỷ lệ không trùng số nào, so sánh với baseline random và Top tín hiệu theo phương án tốt nhất.
 
 ## Xuất báo cáo Excel
 

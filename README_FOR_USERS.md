@@ -38,14 +38,15 @@ Vào tab `Pattern Mining`:
 3. Chọn `Top tín hiệu`.
 4. Bấm `Tính tín hiệu lịch sử`.
 
-APE sẽ tính tín hiệu bằng hai lớp:
+APE sẽ tính tín hiệu bằng ba lớp:
 
 - Rule số đơn lẻ dạng `số ở kỳ N -> số ở kỳ N+lag`.
 - Cấu trúc dãy gồm lẻ/chẵn và phân vùng số `01-09`, `10-20`, `21-30`, `31-40`, `41-45`.
+- Độ lặp số giữa kỳ `N` và kỳ `N+lag`, ví dụ kỳ `N+3` thường trùng 0, 1, 2 hay nhiều số so với kỳ N.
 
-Bảng `Top tín hiệu lịch sử từ kỳ dữ liệu cuối` là danh sách tín hiệu được chấm điểm theo cả rule lịch sử và cấu trúc dãy.
+Bảng `Top tín hiệu lịch sử từ kỳ dữ liệu cuối` là danh sách tín hiệu được chấm điểm theo rule lịch sử, cấu trúc dãy và độ lặp N→N+lag.
 
-Bảng `Backtest walk-forward` cho biết các tín hiệu đó từng hoạt động thế nào khi kiểm định ngược trên dữ liệu cũ.
+Bảng `Backtest walk-forward` cho biết các tín hiệu đó từng hoạt động thế nào khi kiểm định ngược trên dữ liệu cũ. Bảng này cũng hiển thị thêm các dòng về độ lặp, như số trùng trung bình, tỷ lệ trùng ít nhất 1 số và phân bố số trùng giữa hai kỳ theo độ trễ đã chọn.
 
 ## Xuất báo cáo Excel
 

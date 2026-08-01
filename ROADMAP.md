@@ -109,13 +109,25 @@ Delivered:
 - Backtest summary rows for reference parity and zone patterns.
 - Structural pattern automated tests.
 
-### Sprint 3.3 - Pattern Report Export
+### Sprint 3.3 - Repeat Overlap Learning
+Status: Completed in v1.3.0
+
+Delivered:
+- Repeat-overlap analysis for `N -> N+lag`.
+- Average overlap and modal overlap between historical rows.
+- Zero-overlap, one-plus-overlap and two-plus-overlap rates.
+- Repeat-aware signal scoring for latest-row values.
+- Backtest summary rows for repeat-overlap learning.
+- Repeat-overlap automated tests.
+
+### Sprint 3.4 - Pattern Report Export
 Status: Next
 
 Planned scope:
 - Export Pattern Mining report to Excel.
 - Compare multiple lags side by side.
 - Add lift/support charts.
+- Add repeat-overlap tables for N+1 through N+10.
 - Add rule detail drilldown.
 - Add benchmark against random selection.
 

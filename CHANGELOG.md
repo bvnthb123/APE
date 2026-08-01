@@ -1,18 +1,33 @@
 # CHANGELOG
 
+## v1.4.0 - Strategy Optimizer
+
+### Added
+- Strategy Optimizer for Pattern Mining.
+- Walk-forward comparison of multiple historical calculation methods.
+- Strategy toggles for rule-only, structure learning, repeat-overlap learning and combined scoring.
+- Automatic support-variant search around the selected minimum support.
+- Baseline comparison against random Top K selection.
+- CMD command: `py main.py optimize --lag 3 --top 10`.
+- Automated tests for strategy generation, evaluation and optimized signal output.
+
+### Changed
+- Version updated to v1.4.0.
+- Pattern optimization now ranks strategies by historical rate of at least one matched value.
+
 ## v1.3.0 - Repeat Overlap Learning
 
 ### Added
 - Repeat-overlap learning for `N -> N+lag`.
-- Historical summary of how many values repeat between draw N and draw N+lag.
-- Metrics for average overlap, modal overlap, zero-overlap rate, one-plus-overlap rate and two-plus-overlap rate.
-- Conservative repeat-overlap score boost for latest-row values when the selected lag historically tends to repeat.
-- Backtest rows now include repeat-overlap learning details.
-- Automated tests for repeat-overlap calculation, repeat weighting and backtest display rows.
+- Average overlap, modal overlap and overlap distribution metrics.
+- Zero-overlap, one-plus-overlap and two-plus-overlap rates.
+- Repeat-overlap scoring weight for values from the latest row when the selected lag historically repeats values.
+- Backtest rows now show repeat-overlap learning details.
+- Automated tests for repeat overlap and repeat-weight behavior.
 
 ### Changed
 - Version updated to v1.3.0.
-- Pattern Mining signal scoring now combines value-to-value rules, structural learning and repeat-overlap learning.
+- Pattern Mining now uses value rules, structure learning and repeat-overlap learning together.
 
 ## v1.2.0 - Structural Pattern Learning
 

@@ -1,4 +1,4 @@
-# APE v1.2.0
+# APE v1.3.0
 
 Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch sử.
 
@@ -16,6 +16,7 @@ Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch
 - Sprint 2.6 - Release ZIP & QA
 - Sprint 3.1 - Pattern Mining & Backtest
 - Sprint 3.2 - Structural Pattern Learning
+- Sprint 3.3 - Repeat Overlap Learning
 
 ## Cập nhật bản mới
 
@@ -61,7 +62,7 @@ make_release_zip.bat
 File ZIP nằm tại:
 
 ```text
-releases\APE-v1.2.0-portable.zip
+releases\APE-v1.3.0-portable.zip
 ```
 
 Đây là dạng portable folder. Người dùng cần giải nén ZIP và chạy `APE.exe`. Không copy riêng `APE.exe` ra ngoài thư mục.
@@ -115,7 +116,10 @@ releases\APE-v1.2.0-portable.zip
 - Chọn support tối thiểu để lọc rule yếu.
 - Học cấu trúc lẻ/chẵn của từng dãy.
 - Học phân vùng số: `01-09`, `10-20`, `21-30`, `31-40`, `41-45`.
-- Chấm điểm tín hiệu bằng cả rule số đơn lẻ và cấu trúc dãy.
+- Học độ lặp số giữa kỳ `N` và kỳ `N+lag`.
+- Đếm tỷ lệ trùng `0 số`, `1 số`, `2 số` hoặc nhiều hơn giữa hai kỳ cách nhau theo độ trễ.
+- Ưu tiên có kiểm soát các số từ kỳ gần nhất nếu độ trễ đang chọn thường có số lặp lại.
+- Chấm điểm tín hiệu bằng rule số đơn lẻ, cấu trúc dãy và độ lặp N→N+lag.
 - Cân bằng Top tín hiệu theo quota cấu trúc lịch sử.
 - Hiển thị Top tín hiệu lịch sử từ kỳ dữ liệu cuối.
 - Hiển thị Top rule lịch sử theo support, lift và score.
@@ -189,4 +193,4 @@ Các thống kê trong APE chỉ mô tả dữ liệu lịch sử, không bảo 
 
 ## Bước tiếp theo
 
-Sprint 3.3 - Pattern report export: xuất riêng báo cáo Pattern Mining, thêm biểu đồ lift/support và so sánh nhiều độ trễ.
+Sprint 3.4 - Pattern report export: xuất riêng báo cáo Pattern Mining, thêm biểu đồ lift/support, bảng độ lặp theo nhiều độ trễ và so sánh nhiều độ trễ.

@@ -6,6 +6,7 @@ from ape.patterns.mining import (
     DrawStructure,
     PatternMiner,
     PatternRule,
+    RepeatOverlapSummary,
     StructureProfile,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "DrawStructure",
     "PatternMiner",
     "PatternRule",
+    "RepeatOverlapSummary",
     "StructureProfile",
 ]

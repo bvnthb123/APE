@@ -113,23 +113,34 @@ Delivered:
 Status: Completed in v1.3.0
 
 Delivered:
-- Repeat-overlap analysis for `N -> N+lag`.
-- Average overlap and modal overlap between historical rows.
+- Repeat-overlap learning for `N -> N+lag`.
+- Average overlap, modal overlap and overlap distribution.
 - Zero-overlap, one-plus-overlap and two-plus-overlap rates.
-- Repeat-aware signal scoring for latest-row values.
-- Backtest summary rows for repeat-overlap learning.
+- Repeat-overlap weight for latest-row values.
 - Repeat-overlap automated tests.
 
-### Sprint 3.4 - Pattern Report Export
+### Sprint 3.4 - Strategy Optimizer
+Status: Completed in v1.4.0
+
+Delivered:
+- Multiple strategy comparison by walk-forward backtest.
+- True/false toggles for structure learning and repeat-overlap learning.
+- Support-variant search around the selected minimum support.
+- Historical optimization for the rate of at least one matched value.
+- Random baseline comparison.
+- CMD optimizer command.
+- Strategy optimizer automated tests.
+
+### Sprint 3.5 - Pattern Report Export
 Status: Next
 
 Planned scope:
 - Export Pattern Mining report to Excel.
 - Compare multiple lags side by side.
 - Add lift/support charts.
-- Add repeat-overlap tables for N+1 through N+10.
 - Add rule detail drilldown.
 - Add benchmark against random selection.
+- Bring Strategy Optimizer controls directly into the GUI.
 
 ## Sprint 4 - Data Management
 Status: Pending

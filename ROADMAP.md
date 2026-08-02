@@ -131,16 +131,28 @@ Delivered:
 - CMD optimizer command.
 - Strategy optimizer automated tests.
 
-### Sprint 3.5 - Pattern Report Export
+### Sprint 3.5 - Target-Hit Strategy Optimizer
+Status: Completed in v1.5.0
+
+Delivered:
+- Configurable target-hit optimization, such as at least 4 matches from Top 10.
+- `--target` option for the CMD optimizer command.
+- Target-hit strategy ranking by walk-forward backtest.
+- Lag-window ensemble strategies around the selected lag.
+- Expanded support-variant search for high-hit targets.
+- Hypergeometric random baseline for at least N matches.
+- Overfit warnings for limited or unattained target-hit results.
+- Target-hit optimizer automated tests.
+
+### Sprint 3.6 - Strategy Optimizer GUI
 Status: Next
 
 Planned scope:
-- Export Pattern Mining report to Excel.
-- Compare multiple lags side by side.
-- Add lift/support charts.
-- Add rule detail drilldown.
-- Add benchmark against random selection.
 - Bring Strategy Optimizer controls directly into the GUI.
+- Add a target-hit selector such as ≥1, ≥2, ≥3 or ≥4 matches.
+- Show Top strategy table and Top signal table side by side.
+- Add warning labels for overfit and insufficient history.
+- Export Strategy Optimizer report to Excel.
 
 ## Sprint 4 - Data Management
 Status: Pending

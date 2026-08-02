@@ -50,10 +50,18 @@ Bảng `Backtest walk-forward` cho biết các tín hiệu đó từng hoạt đ
 
 ## Strategy Optimizer trong CMD
 
-Dùng khi muốn APE tự thử nhiều cách tính rồi chọn phương án có tỷ lệ lịch sử `trùng ít nhất 1 số` tốt nhất:
+Dùng khi muốn APE tự thử nhiều cách tính rồi chọn phương án có tỷ lệ lịch sử tốt nhất theo mốc số trùng bạn đặt.
+
+Tối ưu mốc trùng ít nhất 1 số:
 
 ```text
-py main.py optimize --lag 3 --top 10 --support 3
+py main.py optimize --lag 3 --top 10 --support 3 --target 1
+```
+
+Tối ưu mốc trùng ít nhất 4 số:
+
+```text
+py main.py optimize --lag 3 --top 10 --support 3 --target 4
 ```
 
 Optimizer sẽ tự so sánh nhiều phương án:
@@ -63,8 +71,11 @@ Optimizer sẽ tự so sánh nhiều phương án:
 - Rule + độ lặp.
 - Rule + cấu trúc dãy + độ lặp.
 - Nhiều mức support quanh mức bạn chọn.
+- Lag đơn và ensemble nhiều độ trễ quanh lag chính.
 
-Kết quả CMD sẽ in phương án tốt nhất, tỷ lệ trùng ít nhất 1 số, tỷ lệ không trùng số nào, so sánh với baseline random và Top tín hiệu theo phương án tốt nhất.
+Kết quả CMD sẽ in phương án tốt nhất, tỷ lệ trùng ít nhất `target` số, tỷ lệ không trùng số nào, so sánh với baseline random và Top tín hiệu theo phương án tốt nhất.
+
+Nếu mốc `--target 4` không đạt trong backtest hoặc không vượt random, APE sẽ ghi cảnh báo để tránh hiểu nhầm là mô hình đã đủ tin cậy.
 
 ## Xuất báo cáo Excel
 

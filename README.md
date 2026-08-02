@@ -1,4 +1,4 @@
-# APE v1.3.0
+# APE v1.5.0
 
 Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch sử.
 
@@ -17,6 +17,8 @@ Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch
 - Sprint 3.1 - Pattern Mining & Backtest
 - Sprint 3.2 - Structural Pattern Learning
 - Sprint 3.3 - Repeat Overlap Learning
+- Sprint 3.4 - Strategy Optimizer
+- Sprint 3.5 - Target-Hit Strategy Optimizer
 
 ## Cập nhật bản mới
 
@@ -62,7 +64,7 @@ make_release_zip.bat
 File ZIP nằm tại:
 
 ```text
-releases\APE-v1.3.0-portable.zip
+releases\APE-v1.5.0-portable.zip
 ```
 
 Đây là dạng portable folder. Người dùng cần giải nén ZIP và chạy `APE.exe`. Không copy riêng `APE.exe` ra ngoài thư mục.
@@ -127,7 +129,41 @@ releases\APE-v1.3.0-portable.zip
 
 Lưu ý: Pattern Mining chỉ mô tả tín hiệu trong dữ liệu quá khứ và kiểm định ngược; không phải cam kết hay bảo đảm cho kết quả tương lai.
 
-### Biểu đồ
+## Strategy Optimizer bằng CMD
+
+Lệnh `optimize` dùng cùng database với GUI để thử nhiều phương án tính toán và chọn phương án có kết quả backtest tốt nhất.
+
+Tối ưu mục tiêu trùng ít nhất 1 số:
+
+```text
+py main.py optimize --lag 3 --top 10 --support 3 --target 1
+```
+
+Tối ưu mục tiêu trùng ít nhất 4 số:
+
+```text
+py main.py optimize --lag 3 --top 10 --support 3 --target 4
+```
+
+Optimizer sẽ thử nhiều cấu hình:
+
+- Rule thuần.
+- Rule + cấu trúc dãy.
+- Rule + độ lặp N→N+lag.
+- Rule + cấu trúc dãy + độ lặp.
+- Nhiều mức support quanh mức bạn chọn.
+- Lag đơn và các ensemble nhiều độ trễ quanh lag chính.
+
+Kết quả trả về gồm:
+
+- Phương án tốt nhất trong backtest.
+- Tỷ lệ trùng ít nhất `target` số.
+- Tỷ lệ không trùng số nào.
+- Số khớp trung bình.
+- So sánh với baseline random.
+- Top tín hiệu theo phương án tốt nhất.
+
+## Biểu đồ
 
 - Biểu đồ cột tần suất 01-45.
 - Biểu đồ đường khoảng vắng hiện tại.
@@ -180,6 +216,7 @@ py main.py validate FILE.xlsx
 py main.py import FILE.xlsx
 py main.py analyze
 py main.py analyze --json
+py main.py optimize --lag 3 --top 10 --support 3 --target 4
 py -m pytest -q
 ```
 
@@ -193,4 +230,4 @@ Các thống kê trong APE chỉ mô tả dữ liệu lịch sử, không bảo 
 
 ## Bước tiếp theo
 
-Sprint 3.4 - Pattern report export: xuất riêng báo cáo Pattern Mining, thêm biểu đồ lift/support, bảng độ lặp theo nhiều độ trễ và so sánh nhiều độ trễ.
+Sprint 3.6 - Strategy Optimizer GUI: đưa bảng tối ưu mục tiêu trùng ít nhất N số vào giao diện, thêm biểu đồ so sánh strategy và xuất báo cáo Excel.

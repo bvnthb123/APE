@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## v1.5.0 - Target-Hit Strategy Optimizer
+
+### Added
+- Configurable target-hit optimization for Pattern Mining.
+- `--target` option for `py main.py optimize`, for example `--target 4`.
+- Strategy ranking by historical rate of at least N matched values.
+- Random baseline for configurable hit thresholds using a hypergeometric model.
+- Lag-window ensembles around the selected lag.
+- Expanded support-variant search for high-hit objectives.
+- Overfit warnings when the target threshold is not reached or testing rows are limited.
+- Automated tests for target-hit optimization and target random baseline.
+
+### Changed
+- Version updated to v1.5.0.
+- Strategy Optimizer now supports both low-threshold goals such as at least 1 match and high-threshold goals such as at least 4 matches.
+
 ## v1.4.0 - Strategy Optimizer
 
 ### Added

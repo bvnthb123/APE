@@ -81,6 +81,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Số tín hiệu lấy ra để kiểm định.",
     )
     optimize_parser.add_argument(
+        "--target",
+        type=int,
+        default=1,
+        help="Mốc số trùng cần tối ưu, ví dụ 4 nghĩa là tối ưu tỷ lệ trùng ít nhất 4 số.",
+    )
+    optimize_parser.add_argument(
         "--support",
         type=int,
         default=3,
@@ -145,13 +151,14 @@ def print_strategy_optimization(app: APEApplication, args: argparse.Namespace) -
         top_k=args.top,
         base_min_support=args.support,
         min_training_rows=args.training_rows,
+        target_hits=args.target,
     )
 
     print("\n================ STRATEGY OPTIMIZER ================")
     for name, value in result.to_rows():
         print(f"{name}: {value}")
 
-    signals = result.latest_signals(optimizer.miner, draws)
+    signals = result.latest_signals(optimizer, draws)
     signal_values = " - ".join(f"{signal.value:02d}" for signal in signals)
     print("\nTop tín hiệu theo phương án tốt nhất:")
     print(signal_values or "Chưa đủ dữ liệu")

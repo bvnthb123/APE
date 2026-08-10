@@ -9,7 +9,7 @@ from ape.core.app import APEApplication
 from ape.core.exceptions import APEError
 from ape.database.repositories import DrawRepository
 from ape.importers.excel_importer import ExcelDrawImporter
-from ape.patterns import StrategyOptimizer
+from ape.patterns import StrategyAuditor, StrategyOptimizer
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -98,6 +98,53 @@ def build_parser() -> argparse.ArgumentParser:
         default=60,
         help="Số kỳ đầu dùng làm vùng học ban đầu khi backtest walk-forward.",
     )
+
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help="Replay Top tín hiệu lịch sử, so với dãy đúng và tìm phương án tối ưu.",
+    )
+    audit_parser.add_argument(
+        "--lag-from",
+        type=int,
+        default=1,
+        help="Độ trễ bắt đầu để rà soát, mặc định N+1.",
+    )
+    audit_parser.add_argument(
+        "--lag-to",
+        type=int,
+        default=3,
+        help="Độ trễ kết thúc để rà soát, mặc định N+3.",
+    )
+    audit_parser.add_argument(
+        "--top",
+        type=int,
+        default=10,
+        help="Số tín hiệu tool trả ra ở mỗi lần replay.",
+    )
+    audit_parser.add_argument(
+        "--target",
+        type=int,
+        default=4,
+        help="Mốc số trùng mong muốn, mặc định tối ưu từ 4 số trở lên.",
+    )
+    audit_parser.add_argument(
+        "--support",
+        type=int,
+        default=2,
+        help="Support tối thiểu gốc để optimizer thử các biến thể.",
+    )
+    audit_parser.add_argument(
+        "--training-rows",
+        type=int,
+        default=30,
+        help="Số kỳ đầu dùng làm vùng học ban đầu trước khi replay.",
+    )
+    audit_parser.add_argument(
+        "--detail",
+        type=int,
+        default=20,
+        help="Số dòng replay gần nhất cần in chi tiết.",
+    )
     return parser
 
 
@@ -165,6 +212,44 @@ def print_strategy_optimization(app: APEApplication, args: argparse.Namespace) -
     print("====================================================\n")
 
 
+def print_strategy_audit(app: APEApplication, args: argparse.Namespace) -> None:
+    with app.database.session() as session:
+        draws = DrawRepository(session).list_chronological()
+
+    auditor = StrategyAuditor()
+    result = auditor.audit(
+        draws,
+        lag_from=args.lag_from,
+        lag_to=args.lag_to,
+        top_k=args.top,
+        base_min_support=args.support,
+        min_training_rows=args.training_rows,
+        target_hits=args.target,
+    )
+
+    print("\n================ STRATEGY AUDIT REPLAY ================")
+    for name, value in result.to_rows():
+        print(f"{name}: {value}")
+
+    print("\nChi tiết replay gần nhất:")
+    headers = (
+        "#",
+        "Ngày N",
+        "Ngày đúng",
+        "Lag",
+        "TT",
+        "Khớp",
+        "Top tín hiệu",
+        "Dãy đúng",
+        "Số trùng",
+    )
+    print(" | ".join(headers))
+    print("-" * 140)
+    for row in result.detail_rows(limit=args.detail):
+        print(" | ".join(row[:9]))
+    print("========================================================\n")
+
+
 def launch_gui() -> int:
     try:
         from ape.gui import run_gui
@@ -206,11 +291,13 @@ def main() -> int:
                 print_analysis(report)
         elif args.command == "optimize":
             print_strategy_optimization(app, args)
+        elif args.command == "audit":
+            print_strategy_audit(app, args)
         else:
             print_status(app)
 
         return 0
-    except APEError as exc:
+    except (APEError, ValueError) as exc:
         print(f"LỖI: {exc}")
         return 1
 

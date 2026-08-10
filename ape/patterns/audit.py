@@ -69,6 +69,8 @@ class StrategyAuditResult:
     random_target_hit_rate: float
     random_one_plus_hit_rate: float
     random_average_hits: float
+    strategy_mode: str = "quick"
+    history_rows_used: int = 0
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
     @property
@@ -115,6 +117,8 @@ class StrategyAuditResult:
     def to_rows(self) -> list[tuple[str, str]]:
         rows: list[tuple[str, str]] = [
             ("Chế độ", "Strategy Audit Replay"),
+            ("Chế độ rà soát", self.strategy_mode),
+            ("Số kỳ lịch sử dùng", str(self.history_rows_used)),
             ("Khoảng độ trễ rà soát", f"N+{self.lag_from} đến N+{self.lag_to}"),
             ("Top tín hiệu", str(self.top_k)),
             ("Mục tiêu", f"Trùng ít nhất {self.target_hits} số"),
@@ -135,19 +139,13 @@ class StrategyAuditResult:
             [
                 ("Phương án tối ưu", best.config.detail_label),
                 ("Số kỳ replay", str(len(self.replay_rows))),
-                (
-                    f"Tỷ lệ replay đạt ≥{self.target_hits} số",
-                    f"{self.target_hit_rate * 100:.4f}%",
-                ),
+                (f"Tỷ lệ replay đạt ≥{self.target_hits} số", f"{self.target_hit_rate * 100:.4f}%"),
                 ("Tỷ lệ replay đạt ≥1 số", f"{self.one_plus_hit_rate * 100:.2f}%"),
                 ("Tỷ lệ replay miss 0 số", f"{self.zero_hit_rate * 100:.2f}%"),
                 ("Số khớp trung bình replay", f"{self.average_hits:.3f}"),
                 ("Số khớp cao nhất replay", str(self.max_hits)),
                 ("Phân bố số khớp replay", self.distribution_label),
-                (
-                    f"Chênh lệch ≥{self.target_hits} số so với random",
-                    f"{(self.target_hit_rate - self.random_target_hit_rate) * 100:+.4f}%",
-                ),
+                (f"Chênh lệch ≥{self.target_hits} số so với random", f"{(self.target_hit_rate - self.random_target_hit_rate) * 100:+.4f}%"),
                 ("Top lag/phương án", self.top_lag_label()),
             ]
         )
@@ -163,8 +161,7 @@ class StrategyAuditResult:
             labels.append(
                 f"{index}. {item.config.detail_label}: "
                 f"≥{self.target_hits} số {item.target_hit_rate * 100:.4f}%, "
-                f"≥1 số {item.one_plus_hit_rate * 100:.2f}%, "
-                f"TB {item.average_hits:.2f}"
+                f"≥1 số {item.one_plus_hit_rate * 100:.2f}%, TB {item.average_hits:.2f}"
             )
         return " | ".join(labels)
 
@@ -191,6 +188,8 @@ class StrategyAuditor:
         base_min_support: int = 2,
         min_training_rows: int = 30,
         target_hits: int = 4,
+        strategy_mode: str = "quick",
+        max_history_rows: int | None = 140,
     ) -> StrategyAuditResult:
         if lag_from < 1 or lag_to < 1:
             raise ValueError("lag range must start at 1 or greater")
@@ -201,37 +200,38 @@ class StrategyAuditor:
         if target_hits < 1:
             raise ValueError("target_hits must be at least 1")
 
+        source_draws = self.optimizer.recent_draws(draws, max_history_rows)
         best_by_lag: list[StrategyEvaluation] = []
         for lag in range(lag_from, lag_to + 1):
             result = self.optimizer.optimize(
-                draws,
+                source_draws,
                 lag=lag,
                 top_k=top_k,
                 base_min_support=base_min_support,
                 min_training_rows=min_training_rows,
                 target_hits=target_hits,
+                strategy_mode=strategy_mode,
+                max_history_rows=None,
             )
             if result.best is not None:
                 best_by_lag.append(result.best)
 
         best_by_lag.sort(key=lambda item: item.sort_key(), reverse=True)
         best = best_by_lag[0] if best_by_lag else None
-        replay_rows = self.replay_rows(
-            draws,
-            best.config,
-            top_k=top_k,
-            min_training_rows=min_training_rows,
-        ) if best is not None else []
-
-        random_target = self.optimizer.random_hit_rate_at(
-            top_k=top_k,
-            target_hits=target_hits,
+        replay_rows = (
+            self.replay_rows(source_draws, best.config, top_k=top_k, min_training_rows=min_training_rows)
+            if best is not None
+            else []
         )
+
+        random_target = self.optimizer.random_hit_rate_at(top_k=top_k, target_hits=target_hits)
         warnings = self.build_warnings(
             best,
             replay_rows,
             target_hits=target_hits,
             random_target_hit_rate=random_target,
+            strategy_mode=strategy_mode,
+            max_history_rows=max_history_rows,
         )
         return StrategyAuditResult(
             best_evaluation=best,
@@ -244,6 +244,8 @@ class StrategyAuditor:
             random_target_hit_rate=random_target,
             random_one_plus_hit_rate=self.optimizer.random_hit_rate_at(top_k=top_k, target_hits=1),
             random_average_hits=self.optimizer.random_average_hits(top_k=top_k),
+            strategy_mode=strategy_mode,
+            history_rows_used=len(source_draws),
             warnings=tuple(warnings),
         )
 
@@ -262,11 +264,7 @@ class StrategyAuditor:
 
         for anchor_index in range(min_training_rows, last_anchor):
             known_draws = list(draws[: anchor_index + 1])
-            candidates = self.optimizer.select_candidates(
-                known_draws,
-                config,
-                top_k=top_k,
-            )
+            candidates = self.optimizer.select_candidates(known_draws, config, top_k=top_k)
             selected = tuple(candidate.value for candidate in candidates)
             actual_draw = draws[anchor_index + config.lag]
             actual = tuple(self.optimizer.miner.values(actual_draw))
@@ -291,10 +289,16 @@ class StrategyAuditor:
         *,
         target_hits: int,
         random_target_hit_rate: float,
+        strategy_mode: str,
+        max_history_rows: int | None,
     ) -> list[str]:
         if best is None:
             return ["Chưa đủ dữ liệu để chọn phương án tối ưu."]
         warnings: list[str] = []
+        if strategy_mode == "quick":
+            warnings.append("Đang dùng quick-audit để chạy nhanh; dùng --mode full nếu cần rà sâu hơn.")
+        if max_history_rows:
+            warnings.append(f"Audit đang giới hạn {max_history_rows} kỳ gần nhất để tránh chạy quá lâu.")
         if len(replay_rows) < 30:
             warnings.append("Số kỳ replay thấp; kết quả dễ bị nhiễu hoặc overfit.")
         target_rate = (
@@ -303,11 +307,7 @@ class StrategyAuditor:
             else 0.0
         )
         if target_rate <= 0:
-            warnings.append(
-                f"Trong replay chưa có kỳ nào đạt ≥{target_hits} số; cần hạ kỳ vọng hoặc tăng dữ liệu."
-            )
+            warnings.append(f"Trong replay chưa có kỳ nào đạt ≥{target_hits} số; cần hạ kỳ vọng hoặc tăng dữ liệu.")
         elif target_rate <= random_target_hit_rate:
-            warnings.append(
-                f"Phương án replay chưa vượt baseline random ở mốc ≥{target_hits} số."
-            )
+            warnings.append(f"Phương án replay chưa vượt baseline random ở mốc ≥{target_hits} số.")
         return warnings

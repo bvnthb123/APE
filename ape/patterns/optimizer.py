@@ -8,7 +8,7 @@ and the target row.
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass, field
 from math import comb
 from statistics import mean
@@ -92,6 +92,8 @@ class StrategyOptimizationResult:
     random_target_hit_rate: float
     random_one_plus_hit_rate: float
     random_average_hits: float
+    strategy_mode: str = "quick"
+    history_rows_used: int = 0
 
     def latest_signals(
         self,
@@ -100,8 +102,9 @@ class StrategyOptimizationResult:
     ) -> list[CandidateSignal]:
         if self.best is None:
             return []
+        source_draws = optimizer.recent_draws(draws, self.history_rows_used or None)
         return optimizer.select_candidates(
-            draws,
+            source_draws,
             self.best.config,
             top_k=self.best.top_k,
         )
@@ -119,20 +122,16 @@ class StrategyOptimizationResult:
     def to_rows(self) -> list[tuple[str, str]]:
         rows: list[tuple[str, str]] = [
             ("Chế độ", "Target-Hit Strategy Optimizer"),
+            ("Chế độ rà soát", self.strategy_mode),
+            ("Số kỳ lịch sử dùng", str(self.history_rows_used)),
             ("Mục tiêu tối ưu", f"Trùng ít nhất {self.target_hits} số"),
             ("Số phương án đã thử", str(len(self.evaluations))),
             (
                 f"Baseline random - tỷ lệ ≥{self.target_hits} số",
                 f"{self.random_target_hit_rate * 100:.4f}%",
             ),
-            (
-                "Baseline random - tỷ lệ ≥1 số",
-                f"{self.random_one_plus_hit_rate * 100:.2f}%",
-            ),
-            (
-                "Baseline random - số khớp TB",
-                f"{self.random_average_hits:.3f}",
-            ),
+            ("Baseline random - tỷ lệ ≥1 số", f"{self.random_one_plus_hit_rate * 100:.2f}%"),
+            ("Baseline random - số khớp TB", f"{self.random_average_hits:.3f}"),
         ]
         if self.best is None:
             rows.append(("Kết luận", "Chưa đủ dữ liệu để kiểm định chiến lược."))
@@ -144,10 +143,7 @@ class StrategyOptimizationResult:
             [
                 ("Phương án tốt nhất", best.config.detail_label),
                 ("Số kỳ kiểm định", str(best.tested_rows)),
-                (
-                    f"Tỷ lệ trùng ít nhất {self.target_hits} số",
-                    f"{best.target_hit_rate * 100:.4f}%",
-                ),
+                (f"Tỷ lệ trùng ít nhất {self.target_hits} số", f"{best.target_hit_rate * 100:.4f}%"),
                 ("Tỷ lệ trùng ít nhất 1 số", f"{best.one_plus_hit_rate * 100:.2f}%"),
                 ("Tỷ lệ không trùng số nào", f"{best.zero_hit_rate * 100:.2f}%"),
                 ("Tỷ lệ trùng ít nhất 2 số", f"{best.two_plus_hit_rate * 100:.2f}%"),
@@ -174,9 +170,7 @@ class StrategyOptimizationResult:
                 "nên xem đây là mục tiêu nghiên cứu, không phải kết quả có thể cam kết."
             )
         if best.target_hit_rate <= self.random_target_hit_rate:
-            return (
-                f"Phương án tốt nhất chưa vượt baseline random ở mốc ≥{self.target_hits} số."
-            )
+            return f"Phương án tốt nhất chưa vượt baseline random ở mốc ≥{self.target_hits} số."
         return ""
 
     def top_strategy_label(self, *, limit: int = 5) -> str:
@@ -185,11 +179,9 @@ class StrategyOptimizationResult:
         parts = []
         for index, item in enumerate(self.evaluations[:limit], 1):
             parts.append(
-                f"{index}. {item.config.name} "
-                f"support≥{item.config.min_support}: "
+                f"{index}. {item.config.name} support≥{item.config.min_support}: "
                 f"≥{self.target_hits} số {item.target_hit_rate * 100:.4f}%, "
-                f"≥1 số {item.one_plus_hit_rate * 100:.2f}%, "
-                f"TB {item.average_hits:.2f}"
+                f"≥1 số {item.one_plus_hit_rate * 100:.2f}%, TB {item.average_hits:.2f}"
             )
         return " | ".join(parts)
 
@@ -214,51 +206,74 @@ class StrategyOptimizer:
     def pool_size(self) -> int:
         return self.value_max - self.value_min + 1
 
+    @staticmethod
+    def recent_draws(draws: Sequence[Draw], max_history_rows: int | None) -> list[Draw]:
+        source = list(draws)
+        if max_history_rows is not None and max_history_rows > 0:
+            return source[-max_history_rows:]
+        return source
+
     def generate_configs(
         self,
         *,
         lag: int,
         base_min_support: int,
+        strategy_mode: str = "quick",
     ) -> list[StrategyConfig]:
-        supports = sorted(
-            {
-                1,
-                max(1, base_min_support - 2),
-                max(1, base_min_support - 1),
-                max(1, base_min_support),
-                max(1, base_min_support + 1),
-                max(1, base_min_support + 2),
-                max(1, base_min_support + 3),
-                max(1, base_min_support + 4),
-            }
-        )
-        modes = (
-            ("Rule thuần", False, False),
-            ("Rule + cấu trúc", True, False),
-            ("Rule + độ lặp", False, True),
-            ("Rule + cấu trúc + độ lặp", True, True),
-        )
-        lag_windows = (
-            ("lag đơn", (0,)),
-            ("ensemble gần", (-1, 0, 1)),
-            ("ensemble tiến", (0, 1, 2)),
-            ("ensemble rộng", (-2, -1, 0, 1, 2)),
-        )
-        configs: list[StrategyConfig] = []
-        for support in supports:
-            for mode_name, use_structure, use_repeat_overlap in modes:
-                for lag_name, lag_offsets in lag_windows:
-                    configs.append(
-                        StrategyConfig(
-                            name=f"{mode_name} / {lag_name}",
-                            lag=lag,
-                            min_support=support,
-                            use_structure=use_structure,
-                            use_repeat_overlap=use_repeat_overlap,
-                            lag_offsets=lag_offsets,
-                        )
-                    )
-        return configs
+        if strategy_mode not in {"quick", "full"}:
+            raise ValueError("strategy_mode must be 'quick' or 'full'")
+
+        if strategy_mode == "quick":
+            supports = sorted({1, max(1, base_min_support), max(1, base_min_support + 1)})
+            modes = (
+                ("Rule + cấu trúc + độ lặp", True, True),
+                ("Rule + độ lặp", False, True),
+                ("Rule + cấu trúc", True, False),
+                ("Rule thuần", False, False),
+            )
+            lag_windows = (
+                ("lag đơn", (0,)),
+                ("ensemble gần", (-1, 0, 1)),
+            )
+        else:
+            supports = sorted(
+                {
+                    1,
+                    max(1, base_min_support - 2),
+                    max(1, base_min_support - 1),
+                    max(1, base_min_support),
+                    max(1, base_min_support + 1),
+                    max(1, base_min_support + 2),
+                    max(1, base_min_support + 3),
+                    max(1, base_min_support + 4),
+                }
+            )
+            modes = (
+                ("Rule thuần", False, False),
+                ("Rule + cấu trúc", True, False),
+                ("Rule + độ lặp", False, True),
+                ("Rule + cấu trúc + độ lặp", True, True),
+            )
+            lag_windows = (
+                ("lag đơn", (0,)),
+                ("ensemble gần", (-1, 0, 1)),
+                ("ensemble tiến", (0, 1, 2)),
+                ("ensemble rộng", (-2, -1, 0, 1, 2)),
+            )
+
+        return [
+            StrategyConfig(
+                name=f"{mode_name} / {lag_name}",
+                lag=lag,
+                min_support=support,
+                use_structure=use_structure,
+                use_repeat_overlap=use_repeat_overlap,
+                lag_offsets=lag_offsets,
+            )
+            for support in supports
+            for mode_name, use_structure, use_repeat_overlap in modes
+            for lag_name, lag_offsets in lag_windows
+        ]
 
     def select_candidates(
         self,
@@ -279,7 +294,7 @@ class StrategyOptimizer:
                 draws,
                 lag=lag,
                 min_support=config.min_support,
-                top_n=max(top_k * 4, 30),
+                top_n=max(top_k * 3, 24),
                 use_structure=config.use_structure,
                 use_repeat_overlap=config.use_repeat_overlap,
             )
@@ -318,12 +333,7 @@ class StrategyOptimizer:
             )
 
         combined.sort(
-            key=lambda item: (
-                item.score,
-                item.support,
-                item.average_lift,
-                item.max_lift,
-            ),
+            key=lambda item: (item.score, item.support, item.average_lift, item.max_lift),
             reverse=True,
         )
         return combined[:top_k]
@@ -364,11 +374,7 @@ class StrategyOptimizer:
         hits_per_row: list[int] = []
         for anchor_index in range(min_training_rows, last_anchor):
             known_draws = list(draws[: anchor_index + 1])
-            candidates = self.select_candidates(
-                known_draws,
-                config,
-                top_k=top_k,
-            )
+            candidates = self.select_candidates(known_draws, config, top_k=top_k)
             selected = {candidate.value for candidate in candidates}
             actual = set(self.miner.values(draws[anchor_index + config.lag]))
             hits_per_row.append(len(selected & actual))
@@ -404,10 +410,13 @@ class StrategyOptimizer:
         base_min_support: int = 3,
         min_training_rows: int = 60,
         target_hits: int = 1,
+        strategy_mode: str = "quick",
+        max_history_rows: int | None = 160,
     ) -> StrategyOptimizationResult:
+        source_draws = self.recent_draws(draws, max_history_rows)
         evaluations = [
             self.evaluate(
-                draws,
+                source_draws,
                 config,
                 top_k=top_k,
                 min_training_rows=min_training_rows,
@@ -416,6 +425,7 @@ class StrategyOptimizer:
             for config in self.generate_configs(
                 lag=lag,
                 base_min_support=base_min_support,
+                strategy_mode=strategy_mode,
             )
         ]
         evaluations.sort(key=lambda item: item.sort_key(), reverse=True)
@@ -427,6 +437,8 @@ class StrategyOptimizer:
             random_target_hit_rate=self.random_hit_rate_at(top_k=top_k, target_hits=target_hits),
             random_one_plus_hit_rate=self.random_hit_rate_at(top_k=top_k, target_hits=1),
             random_average_hits=self.random_average_hits(top_k=top_k),
+            strategy_mode=strategy_mode,
+            history_rows_used=len(source_draws),
         )
 
     def random_average_hits(self, *, top_k: int) -> float:

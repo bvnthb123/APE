@@ -1,4 +1,4 @@
-# APE v1.5.0
+# APE v1.6.0
 
 Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch sử.
 
@@ -19,6 +19,7 @@ Adaptive Prediction Engine - ứng dụng desktop phân tích dữ liệu lịch
 - Sprint 3.3 - Repeat Overlap Learning
 - Sprint 3.4 - Strategy Optimizer
 - Sprint 3.5 - Target-Hit Strategy Optimizer
+- Sprint 3.6 - Strategy Audit Replay
 
 ## Cập nhật bản mới
 
@@ -64,7 +65,7 @@ make_release_zip.bat
 File ZIP nằm tại:
 
 ```text
-releases\APE-v1.5.0-portable.zip
+releases\APE-v1.6.0-portable.zip
 ```
 
 Đây là dạng portable folder. Người dùng cần giải nén ZIP và chạy `APE.exe`. Không copy riêng `APE.exe` ra ngoài thư mục.
@@ -133,12 +134,6 @@ Lưu ý: Pattern Mining chỉ mô tả tín hiệu trong dữ liệu quá khứ 
 
 Lệnh `optimize` dùng cùng database với GUI để thử nhiều phương án tính toán và chọn phương án có kết quả backtest tốt nhất.
 
-Tối ưu mục tiêu trùng ít nhất 1 số:
-
-```text
-py main.py optimize --lag 3 --top 10 --support 3 --target 1
-```
-
 Tối ưu mục tiêu trùng ít nhất 4 số:
 
 ```text
@@ -154,14 +149,25 @@ Optimizer sẽ thử nhiều cấu hình:
 - Nhiều mức support quanh mức bạn chọn.
 - Lag đơn và các ensemble nhiều độ trễ quanh lag chính.
 
+## Strategy Audit Replay bằng CMD
+
+Lệnh `audit` dùng để replay lại từng kỳ lịch sử. Tại mỗi kỳ N, APE tạo Top tín hiệu theo phương án đang kiểm định, sau đó so với dãy đúng ở kỳ N+lag để ghi nhận số khớp.
+
+Rà soát độ trễ N+1 đến N+3 và tìm phương án tối ưu cho mục tiêu trùng ít nhất 4 số:
+
+```text
+py main.py audit --lag-from 1 --lag-to 3 --top 10 --support 2 --target 4 --training-rows 30
+```
+
 Kết quả trả về gồm:
 
-- Phương án tốt nhất trong backtest.
-- Tỷ lệ trùng ít nhất `target` số.
-- Tỷ lệ không trùng số nào.
-- Số khớp trung bình.
-- So sánh với baseline random.
-- Top tín hiệu theo phương án tốt nhất.
+- Phương án tối ưu sau khi rà soát N+1 đến N+3.
+- Tỷ lệ replay đạt ít nhất `target` số.
+- Tỷ lệ replay đạt ít nhất 1 số.
+- Tỷ lệ miss 0 số.
+- Số khớp trung bình replay.
+- Phân bố số khớp.
+- Chi tiết từng kỳ: ngày N, ngày đúng, Top tín hiệu, dãy đúng và các số trùng.
 
 ## Biểu đồ
 
@@ -217,6 +223,7 @@ py main.py import FILE.xlsx
 py main.py analyze
 py main.py analyze --json
 py main.py optimize --lag 3 --top 10 --support 3 --target 4
+py main.py audit --lag-from 1 --lag-to 3 --top 10 --support 2 --target 4 --training-rows 30
 py -m pytest -q
 ```
 
@@ -230,4 +237,4 @@ Các thống kê trong APE chỉ mô tả dữ liệu lịch sử, không bảo 
 
 ## Bước tiếp theo
 
-Sprint 3.6 - Strategy Optimizer GUI: đưa bảng tối ưu mục tiêu trùng ít nhất N số vào giao diện, thêm biểu đồ so sánh strategy và xuất báo cáo Excel.
+Sprint 3.7 - Strategy Audit GUI & Export: đưa bảng audit replay vào giao diện, thêm xuất Excel chi tiết từng kỳ và biểu đồ so sánh strategy.

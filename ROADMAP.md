@@ -144,15 +144,27 @@ Delivered:
 - Overfit warnings for limited or unattained target-hit results.
 - Target-hit optimizer automated tests.
 
-### Sprint 3.6 - Strategy Optimizer GUI
+### Sprint 3.6 - Strategy Audit Replay
+Status: Completed in v1.6.0
+
+Delivered:
+- Replay of historical Top K outputs against the actual later row.
+- Multi-lag audit across `N+1` to `N+3` or another configured range.
+- Per-row detail: source date, target date, Top signals, actual values, matched values and hit/miss status.
+- Best strategy selection across audited lags.
+- Replay hit distribution and random-baseline comparison.
+- `py main.py audit` CMD command.
+- Strategy audit automated tests.
+
+### Sprint 3.7 - Strategy Audit GUI & Export
 Status: Next
 
 Planned scope:
-- Bring Strategy Optimizer controls directly into the GUI.
-- Add a target-hit selector such as ≥1, ≥2, ≥3 or ≥4 matches.
-- Show Top strategy table and Top signal table side by side.
-- Add warning labels for overfit and insufficient history.
-- Export Strategy Optimizer report to Excel.
+- Bring Strategy Audit Replay directly into the GUI.
+- Add selector for lag range, Top K, support and target-hit threshold.
+- Show detail replay table in the desktop app.
+- Export audit replay rows to Excel.
+- Add charts comparing hit distribution by strategy.
 
 ## Sprint 4 - Data Management
 Status: Pending

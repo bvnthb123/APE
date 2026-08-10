@@ -52,12 +52,6 @@ Bảng `Backtest walk-forward` cho biết các tín hiệu đó từng hoạt đ
 
 Dùng khi muốn APE tự thử nhiều cách tính rồi chọn phương án có tỷ lệ lịch sử tốt nhất theo mốc số trùng bạn đặt.
 
-Tối ưu mốc trùng ít nhất 1 số:
-
-```text
-py main.py optimize --lag 3 --top 10 --support 3 --target 1
-```
-
 Tối ưu mốc trùng ít nhất 4 số:
 
 ```text
@@ -75,7 +69,33 @@ Optimizer sẽ tự so sánh nhiều phương án:
 
 Kết quả CMD sẽ in phương án tốt nhất, tỷ lệ trùng ít nhất `target` số, tỷ lệ không trùng số nào, so sánh với baseline random và Top tín hiệu theo phương án tốt nhất.
 
-Nếu mốc `--target 4` không đạt trong backtest hoặc không vượt random, APE sẽ ghi cảnh báo để tránh hiểu nhầm là mô hình đã đủ tin cậy.
+## Strategy Audit Replay trong CMD
+
+Dùng khi muốn APE rà soát lại từng kết quả Top tín hiệu mà tool sẽ trả trong quá khứ, rồi so với dãy đúng của từng kỳ.
+
+Rà soát độ trễ từ N+1 đến N+3, mục tiêu trùng ít nhất 4 số:
+
+```text
+py main.py audit --lag-from 1 --lag-to 3 --top 10 --support 2 --target 4 --training-rows 30
+```
+
+Audit sẽ in:
+
+- Phương án tối ưu sau khi so sánh các độ trễ.
+- Tỷ lệ replay đạt ít nhất 4 số.
+- Tỷ lệ replay đạt ít nhất 1 số.
+- Tỷ lệ miss 0 số.
+- Số khớp trung bình.
+- Phân bố số khớp.
+- Chi tiết từng kỳ: ngày N, ngày đúng, Top tín hiệu, dãy đúng và số trùng.
+
+Có thể tăng số dòng chi tiết bằng:
+
+```text
+py main.py audit --lag-from 1 --lag-to 3 --top 10 --support 2 --target 4 --training-rows 30 --detail 50
+```
+
+Nếu mốc `--target 4` không đạt trong replay hoặc không vượt random, APE sẽ ghi cảnh báo để tránh hiểu nhầm là mô hình đã đủ tin cậy.
 
 ## Xuất báo cáo Excel
 

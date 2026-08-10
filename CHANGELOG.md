@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## v1.6.0 - Strategy Audit Replay
+
+### Added
+- Strategy Audit Replay module for historical Pattern Mining outputs.
+- `py main.py audit` command.
+- Multi-lag audit across a range such as `N+1` to `N+3`.
+- Replay detail rows: source date, target date, Top signals, actual values, matched values and hit/miss status.
+- Best-strategy selection across audited lags.
+- Replay metrics: target hit rate, one-plus hit rate, zero-hit rate, average hits, max hits and hit distribution.
+- Automated tests for Strategy Audit Replay.
+
+### Changed
+- Version updated to v1.6.0.
+- Historical strategy review can now audit each replayed output against the actual later row, not just return aggregate optimization metrics.
+
 ## v1.5.0 - Target-Hit Strategy Optimizer
 
 ### Added

@@ -20,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("gui", help="Mở giao diện desktop.")
+    subparsers.add_parser("manual", help="Mở cửa sổ nhập dữ liệu lịch sử và cập nhật Top 7.")
     subparsers.add_parser("status", help="Hiển thị trạng thái hệ thống trong CMD.")
 
     validate_parser = subparsers.add_parser(
@@ -180,11 +181,24 @@ def launch_gui() -> int:
     return run_gui()
 
 
+def launch_manual_entry() -> int:
+    try:
+        from ape.gui.manual_entry import run_manual_entry
+    except ImportError as exc:
+        print("Không thể khởi động cửa sổ nhập dữ liệu lịch sử.")
+        print("Hãy chạy: py -m pip install -r requirements.txt")
+        print(f"Chi tiết: {exc}")
+        return 1
+    return run_manual_entry()
+
+
 def main() -> int:
     args = build_parser().parse_args()
 
     if args.command in {None, "gui"}:
         return launch_gui()
+    if args.command == "manual":
+        return launch_manual_entry()
 
     app = APEApplication()
     app.start()

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 
 from ape.analytics.service import AnalysisService
 from ape.core.app import APEApplication
 from ape.core.exceptions import APEError
 from ape.database.repositories import DrawRepository
 from ape.importers.excel_importer import ExcelDrawImporter
-from ape.patterns import StrategyAuditor, StrategyOptimizer
+from ape.patterns import StrategyAuditor, StrategyOptimizer, StrategyRechecker
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -69,6 +70,21 @@ def build_parser() -> argparse.ArgumentParser:
     audit_parser.add_argument("--detail", type=int, default=20, help="Số dòng replay gần nhất cần in chi tiết.")
     audit_parser.add_argument("--mode", choices=("quick", "full"), default="quick", help="quick chạy nhanh, full rà sâu hơn.")
     audit_parser.add_argument("--max-history", type=int, default=140, help="Số kỳ gần nhất dùng để audit; 0 nghĩa là dùng toàn bộ.")
+
+    recheck_parser = subparsers.add_parser(
+        "recheck",
+        help="Đối chiếu liên tục từ một ngày bắt đầu để tìm phương án lịch sử ổn định nhất.",
+    )
+    recheck_parser.add_argument("--from-date", default="2026-03-01", help="Ngày bắt đầu đối chiếu, dạng YYYY-MM-DD.")
+    recheck_parser.add_argument("--to-date", default=None, help="Ngày kết thúc đối chiếu, mặc định hôm nay.")
+    recheck_parser.add_argument("--lag-from", type=int, default=1, help="Độ trễ bắt đầu, mặc định N+1.")
+    recheck_parser.add_argument("--lag-to", type=int, default=3, help="Độ trễ kết thúc, mặc định N+3.")
+    recheck_parser.add_argument("--top", type=int, default=7, help="Số tín hiệu tham chiếu, mặc định 7.")
+    recheck_parser.add_argument("--target", type=int, default=1, help="Mốc số trùng cần ưu tiên, mặc định ≥1 số.")
+    recheck_parser.add_argument("--support", type=int, default=2, help="Support tối thiểu gốc.")
+    recheck_parser.add_argument("--training-rows", type=int, default=30, help="Số kỳ đầu dùng làm vùng học ban đầu.")
+    recheck_parser.add_argument("--mode", choices=("quick", "full"), default="quick", help="quick chạy nhanh, full rà sâu hơn.")
+    recheck_parser.add_argument("--detail", type=int, default=40, help="Số dòng đối chiếu gần nhất cần in chi tiết.")
     return parser
 
 
@@ -104,6 +120,17 @@ def print_analysis(report) -> None:
 
 def normalized_history_limit(value: int) -> int | None:
     return None if value <= 0 else value
+
+
+def parse_iso_date(value: str | None, *, default: date | None = None) -> date:
+    if value is None:
+        if default is None:
+            raise ValueError("Thiếu ngày cần xử lý.")
+        return default
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("Ngày phải nhập theo dạng YYYY-MM-DD, ví dụ 2026-03-01.") from exc
 
 
 def print_strategy_optimization(app: APEApplication, args: argparse.Namespace) -> None:
@@ -170,6 +197,47 @@ def print_strategy_audit(app: APEApplication, args: argparse.Namespace) -> None:
     print("========================================================\n")
 
 
+def print_rolling_recheck(app: APEApplication, args: argparse.Namespace) -> None:
+    with app.database.session() as session:
+        draws = DrawRepository(session).list_chronological()
+
+    start_date = parse_iso_date(args.from_date)
+    end_date = parse_iso_date(args.to_date, default=date.today())
+
+    print(
+        "\nĐang recheck liên tục: "
+        f"{start_date.strftime('%d/%m/%Y')} → {end_date.strftime('%d/%m/%Y')}, "
+        f"lag N+{args.lag_from}→N+{args.lag_to}, top {args.top}, "
+        f"target ≥{args.target}, mode {args.mode}..."
+    )
+
+    rechecker = StrategyRechecker()
+    result = rechecker.recheck(
+        draws,
+        start_date=start_date,
+        end_date=end_date,
+        lag_from=args.lag_from,
+        lag_to=args.lag_to,
+        top_k=args.top,
+        base_min_support=args.support,
+        min_training_rows=args.training_rows,
+        target_hits=args.target,
+        strategy_mode=args.mode,
+    )
+
+    print("\n================ ROLLING RECHECK ================")
+    for name, value in result.to_rows():
+        print(f"{name}: {value}")
+
+    print("\nChi tiết đối chiếu gần nhất:")
+    headers = ("#", "Ngày N", "Ngày đúng", "Lag", "TT", "Khớp", "Top tín hiệu", "Dãy đúng", "Số trùng")
+    print(" | ".join(headers))
+    print("-" * 140)
+    for row in result.detail_rows(limit=args.detail):
+        print(" | ".join(row))
+    print("=================================================\n")
+
+
 def launch_gui() -> int:
     try:
         from ape.gui import run_gui
@@ -220,6 +288,8 @@ def main() -> int:
             print_strategy_optimization(app, args)
         elif args.command == "audit":
             print_strategy_audit(app, args)
+        elif args.command == "recheck":
+            print_rolling_recheck(app, args)
         else:
             print_status(app)
 

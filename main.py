@@ -19,8 +19,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    subparsers.add_parser("gui", help="Mở giao diện desktop.")
-    subparsers.add_parser("manual", help="Mở cửa sổ nhập dữ liệu lịch sử và cập nhật Top 7.")
+    subparsers.add_parser("gui", help="Mở giao diện desktop ban đầu.")
+    subparsers.add_parser("manual", help="Mở cửa sổ nhập dữ liệu lịch sử và cập nhật Top 7 ổn định.")
     subparsers.add_parser("status", help="Hiển thị trạng thái hệ thống trong CMD.")
 
     validate_parser = subparsers.add_parser(
@@ -50,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     optimize_parser.add_argument("--lag", type=int, default=3, help="Độ trễ kiểm định, ví dụ 3 nghĩa là N+3.")
     optimize_parser.add_argument("--top", type=int, default=10, help="Số tín hiệu lấy ra để kiểm định.")
-    optimize_parser.add_argument("--target", type=int, default=1, help="Mốc số trùng cần tối ưu.")
+    optimize_parser.add_argument("--target", type=int, default=1, help="Mốc số trùng cần tối ưu; mặc định ≥1 để ưu tiên ổn định.")
     optimize_parser.add_argument("--support", type=int, default=3, help="Support tối thiểu gốc.")
     optimize_parser.add_argument("--training-rows", type=int, default=60, help="Số kỳ đầu dùng làm vùng học ban đầu.")
     optimize_parser.add_argument("--mode", choices=("quick", "full"), default="quick", help="quick chạy nhanh, full rà sâu hơn.")
@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     audit_parser.add_argument("--lag-from", type=int, default=1, help="Độ trễ bắt đầu, mặc định N+1.")
     audit_parser.add_argument("--lag-to", type=int, default=3, help="Độ trễ kết thúc, mặc định N+3.")
     audit_parser.add_argument("--top", type=int, default=10, help="Số tín hiệu tool trả ra ở mỗi lần replay.")
-    audit_parser.add_argument("--target", type=int, default=4, help="Mốc số trùng mong muốn.")
+    audit_parser.add_argument("--target", type=int, default=1, help="Mốc số trùng mong muốn; mặc định ≥1 để tránh overfit.")
     audit_parser.add_argument("--support", type=int, default=2, help="Support tối thiểu gốc.")
     audit_parser.add_argument("--training-rows", type=int, default=30, help="Số kỳ đầu dùng làm vùng học ban đầu.")
     audit_parser.add_argument("--detail", type=int, default=20, help="Số dòng replay gần nhất cần in chi tiết.")

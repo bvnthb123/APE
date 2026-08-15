@@ -1,7 +1,9 @@
-"""Manual draw entry and recalculation helpers.
+"""Manual draw entry and stable Top 7 recalculation helpers.
 
 This module accepts a newly known historical row, stores it in the database,
-and recalculates the next Top historical signals using the current audit logic.
+and recalculates the next Top historical signals using stable audit logic.
+The stable flow prioritizes historical one-plus hit consistency instead of
+forcing high-hit targets such as 4 matches, because high targets can overfit.
 The output is descriptive historical signal research, not a guarantee of a
 future result.
 """
@@ -118,11 +120,11 @@ def save_manual_draw_and_recalculate(
     lag_from: int = 1,
     lag_to: int = 3,
     support: int = 2,
-    target_hits: int = 4,
+    target_hits: int = 1,
     training_rows: int = 30,
     max_history_rows: int | None = 140,
 ) -> ManualRecalculationResult:
-    """Save one manual historical row and recalculate Top historical signals."""
+    """Save one manual historical row and recalculate stable Top historical signals."""
     if top_k != 7:
         raise ValueError("Luồng nhập thủ công đang cố định Top tín hiệu = 7.")
 

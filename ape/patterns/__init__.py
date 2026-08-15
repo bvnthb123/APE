@@ -20,6 +20,12 @@ from ape.patterns.optimizer import (
     StrategyOptimizationResult,
     StrategyOptimizer,
 )
+from ape.patterns.recheck import (
+    RecheckEvaluation,
+    RecheckResult,
+    RecheckRow,
+    StrategyRechecker,
+)
 
 __all__ = [
     "BacktestSummary",
@@ -27,6 +33,9 @@ __all__ = [
     "DrawStructure",
     "PatternMiner",
     "PatternRule",
+    "RecheckEvaluation",
+    "RecheckResult",
+    "RecheckRow",
     "RepeatOverlapSummary",
     "StrategyAuditResult",
     "StrategyAuditRow",
@@ -35,5 +44,6 @@ __all__ = [
     "StrategyEvaluation",
     "StrategyOptimizationResult",
     "StrategyOptimizer",
+    "StrategyRechecker",
     "StructureProfile",
 ]

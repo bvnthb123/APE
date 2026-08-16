@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 import sys
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -259,7 +259,7 @@ class StrategyLabWindow(QWidget):
             for column_index, value in enumerate(choice.to_row(row_index + 1)):
                 item = QTableWidgetItem(str(value))
                 if column_index in {0, 3, 4, 5, 6, 7}:
-                    item.setTextAlignment(int(0x0084))  # AlignCenter
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row_index, column_index, item)
         if self.choices:
             self.table.selectRow(0)

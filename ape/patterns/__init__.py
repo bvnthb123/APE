@@ -26,6 +26,13 @@ from ape.patterns.recheck import (
     RecheckRow,
     StrategyRechecker,
 )
+from ape.patterns.strategy_choice import (
+    SavedStrategy,
+    SavedStrategyStore,
+    StrategyChoice,
+    StrategyChoiceEngine,
+    saved_strategy_signal_values,
+)
 
 __all__ = [
     "BacktestSummary",
@@ -37,13 +44,18 @@ __all__ = [
     "RecheckResult",
     "RecheckRow",
     "RepeatOverlapSummary",
+    "SavedStrategy",
+    "SavedStrategyStore",
     "StrategyAuditResult",
     "StrategyAuditRow",
     "StrategyAuditor",
+    "StrategyChoice",
+    "StrategyChoiceEngine",
     "StrategyConfig",
     "StrategyEvaluation",
     "StrategyOptimizationResult",
     "StrategyOptimizer",
     "StrategyRechecker",
     "StructureProfile",
+    "saved_strategy_signal_values",
 ]

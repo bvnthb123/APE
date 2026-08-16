@@ -22,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("gui", help="Mở giao diện desktop ban đầu.")
     subparsers.add_parser("manual", help="Mở cửa sổ nhập dữ liệu lịch sử và cập nhật Top 7 ổn định.")
+    subparsers.add_parser("lab", help="Mở cửa sổ tính lại nhiều cách và lưu cách tính.")
     subparsers.add_parser("status", help="Hiển thị trạng thái hệ thống trong CMD.")
 
     validate_parser = subparsers.add_parser(
@@ -260,6 +261,17 @@ def launch_manual_entry() -> int:
     return run_manual_entry()
 
 
+def launch_strategy_lab() -> int:
+    try:
+        from ape.gui.strategy_lab import run_strategy_lab
+    except ImportError as exc:
+        print("Không thể khởi động cửa sổ tính lại nhiều cách.")
+        print("Hãy chạy: py -m pip install -r requirements.txt")
+        print(f"Chi tiết: {exc}")
+        return 1
+    return run_strategy_lab()
+
+
 def main() -> int:
     args = build_parser().parse_args()
 
@@ -267,6 +279,8 @@ def main() -> int:
         return launch_gui()
     if args.command == "manual":
         return launch_manual_entry()
+    if args.command == "lab":
+        return launch_strategy_lab()
 
     app = APEApplication()
     app.start()

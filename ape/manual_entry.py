@@ -1,9 +1,9 @@
 """Manual draw entry and stable Top 7 recalculation helpers.
 
 This module accepts a newly known historical row, stores it in the database,
-and recalculates the next Top historical signals using stable audit logic.
-The stable flow prioritizes historical one-plus hit consistency instead of
-forcing high-hit targets such as 4 matches, because high targets can overfit.
+and recalculates the next Top historical signals. If the user has saved a
+preferred calculation method from the Strategy Lab, that method is applied to
+future recalculations. Otherwise APE falls back to stable one-plus audit logic.
 The output is descriptive historical signal research, not a guarantee of a
 future result.
 """
@@ -18,6 +18,7 @@ from ape.database.database import DATABASE, DatabaseManager
 from ape.database.models import Draw
 from ape.database.repositories import DrawRepository
 from ape.patterns import StrategyAuditor
+from ape.patterns.strategy_choice import SavedStrategyStore, saved_strategy_signal_values
 
 WEEKDAY_NAMES = (
     "Thứ Hai",
@@ -125,9 +126,6 @@ def save_manual_draw_and_recalculate(
     max_history_rows: int | None = 140,
 ) -> ManualRecalculationResult:
     """Save one manual historical row and recalculate stable Top historical signals."""
-    if top_k != 7:
-        raise ValueError("Luồng nhập thủ công đang cố định Top tín hiệu = 7.")
-
     db = database or DATABASE
     db.initialize()
     values = parse_manual_numbers(raw_numbers)
@@ -138,6 +136,24 @@ def save_manual_draw_and_recalculate(
 
     with db.session() as session:
         draws = DrawRepository(session).list_chronological()
+
+    store = SavedStrategyStore()
+    saved_strategy, saved_values = saved_strategy_signal_values(draws, store=store)
+    if saved_strategy is not None:
+        return ManualRecalculationResult(
+            draw_date=draw_date,
+            numbers=values,
+            created=created,
+            top_k=saved_strategy.top_k,
+            signal_values=saved_values,
+            audit_summary_rows=(
+                ("Chế độ", "Áp dụng cách tính đã lưu"),
+                ("Cách tính", saved_strategy.label),
+                ("Lưu lúc", saved_strategy.saved_at or "-"),
+                ("Top tín hiệu", str(saved_strategy.top_k)),
+                ("Mục tiêu đã lưu", f"Trùng ít nhất {saved_strategy.target_hits} số"),
+            ),
+        )
 
     auditor = StrategyAuditor()
     audit_result = auditor.audit(

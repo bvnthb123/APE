@@ -2,6 +2,6 @@
 
 APP_NAME = "Adaptive Prediction Engine"
 APP_CODE = "APE"
-VERSION = "2.1.1"
-BUILD_NAME = "Expanded Target Method Search"
+VERSION = "2.2.0"
+BUILD_NAME = "Full Data Replacement"
 AUTHOR = "Nguyen Thanh Chung + ChatGPT"

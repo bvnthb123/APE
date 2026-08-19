@@ -1,9 +1,11 @@
 """Manual draw entry and stable Top 7 recalculation helpers.
 
 This module accepts a newly known historical row, stores it in the database,
-and recalculates the next Top historical signals. If the user has saved a
-preferred calculation method from the Strategy Lab, that method is applied to
-future recalculations. Otherwise APE falls back to stable one-plus audit logic.
+and recalculates the next Top historical signals. If the user has saved learned
+methods from Target Learning Lab, those methods are applied first. If not, APE
+uses the selected Strategy Lab method, then falls back to stable one-plus audit
+logic.
+
 The output is descriptive historical signal research, not a guarantee of a
 future result.
 """
@@ -19,6 +21,7 @@ from ape.database.models import Draw
 from ape.database.repositories import DrawRepository
 from ape.patterns import StrategyAuditor
 from ape.patterns.strategy_choice import SavedStrategyStore, saved_strategy_signal_values
+from ape.patterns.target_learning import LearnedMethodStore, learned_method_signal_values
 
 WEEKDAY_NAMES = (
     "Thứ Hai",
@@ -136,6 +139,29 @@ def save_manual_draw_and_recalculate(
 
     with db.session() as session:
         draws = DrawRepository(session).list_chronological()
+
+    learned_methods, learned_values = learned_method_signal_values(
+        draws,
+        store=LearnedMethodStore(),
+        top_k=top_k,
+    )
+    if learned_methods:
+        best = learned_methods[0]
+        return ManualRecalculationResult(
+            draw_date=draw_date,
+            numbers=values,
+            created=created,
+            top_k=top_k,
+            signal_values=learned_values,
+            audit_summary_rows=(
+                ("Chế độ", "Áp dụng bộ phương pháp đã học"),
+                ("Số phương pháp đang dùng", str(len(learned_methods))),
+                ("Phương pháp khớp tốt nhất", best.label),
+                ("Khớp khi học", f"{best.fit_match_count}/6"),
+                ("Lưu lúc", best.saved_at or "-"),
+                ("Top tín hiệu", str(top_k)),
+            ),
+        )
 
     store = SavedStrategyStore()
     saved_strategy, saved_values = saved_strategy_signal_values(draws, store=store)

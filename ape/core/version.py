@@ -2,6 +2,6 @@
 
 APP_NAME = "Adaptive Prediction Engine"
 APP_CODE = "APE"
-VERSION = "1.9.0"
-BUILD_NAME = "Strategy Choice Lab"
+VERSION = "2.0.0"
+BUILD_NAME = "Target Learning Lab"
 AUTHOR = "Nguyen Thanh Chung + ChatGPT"

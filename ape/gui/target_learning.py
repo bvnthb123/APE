@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import date
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from ape.core.version import BUILD_NAME, VERSION
 from ape.database.database import DATABASE, DatabaseManager
+from ape.database.models import Draw
 from ape.database.repositories import DrawRepository
 from ape.patterns.target_learning import (
     LearnedMethod,
@@ -124,6 +126,7 @@ class TargetLearningWindow(QWidget):
         self.resize(1180, 720)
         self.setStyleSheet(TARGET_LEARNING_STYLESHEET)
         self._build_ui()
+        self.refresh_data_status()
         self.refresh_saved_label()
 
     def _build_ui(self) -> None:
@@ -153,6 +156,14 @@ class TargetLearningWindow(QWidget):
         note.setWordWrap(True)
         note.setStyleSheet("color: #5E7184; font-style: italic;")
         layout.addWidget(note)
+
+        self.data_status_label = QLabel()
+        self.data_status_label.setWordWrap(True)
+        self.data_status_label.setStyleSheet(
+            "background: white; border: 1px solid #C9D8E8; border-radius: 8px; "
+            "padding: 8px; font-weight: 700; color: #005BAC;"
+        )
+        layout.addWidget(self.data_status_label)
 
         row = QHBoxLayout()
         row.addWidget(QLabel("Dãy số kỳ mới"))
@@ -205,9 +216,30 @@ class TargetLearningWindow(QWidget):
         self.result_text.setPlaceholderText("Kết quả học và Top kỳ tiếp theo sẽ hiển thị tại đây.")
         layout.addWidget(self.result_text, 1)
 
-    def load_draws(self):
+    def load_draws(self) -> list[Draw]:
         with self.database.session() as session:
             return DrawRepository(session).list_chronological()
+
+    def data_status(self, draws: list[Draw] | None = None) -> tuple[str, str, int, str]:
+        current_draws = draws if draws is not None else self.load_draws()
+        if not current_draws:
+            return "Chưa có dữ liệu", "-", 0, "Chưa xác định"
+        first = current_draws[0].draw_date.strftime("%d/%m/%Y")
+        latest = current_draws[-1].draw_date.strftime("%d/%m/%Y")
+        next_date = next_auto_draw_date(current_draws).strftime("%d/%m/%Y")
+        return first, latest, len(current_draws), next_date
+
+    def refresh_data_status(self) -> None:
+        first, latest, total, next_date = self.data_status()
+        if total <= 0:
+            self.data_status_label.setText(
+                "Dữ liệu hiện tại: chưa có kỳ nào. Hãy nhập dữ liệu lịch sử trước."
+            )
+            return
+        self.data_status_label.setText(
+            f"Dữ liệu hiện tại: {total} kỳ · từ {first} đến {latest} · "
+            f"dãy mới bạn nhập sẽ được lưu là kỳ tiếp theo: {next_date}"
+        )
 
     def learn_from_target(self) -> None:
         try:
@@ -217,6 +249,7 @@ class TargetLearningWindow(QWidget):
                 QMessageBox.information(self, "Chưa đủ dữ liệu", "Cần có ít nhất khoảng 30 kỳ lịch sử để học phương pháp.")
                 return
 
+            first_before, latest_before, total_before, next_date_label = self.data_status(draws_before)
             self.learn_button.setEnabled(False)
             self.result_text.setPlainText("Đang thử nhiều cách tính và tổ hợp phương pháp...")
             QApplication.processEvents()
@@ -248,14 +281,22 @@ class TargetLearningWindow(QWidget):
                 engine=self.engine,
                 top_k=self.top_spin.value(),
             )
-            self.fill_table()
+            _first_after, latest_after, total_after, next_after = self.data_status(draws_after)
+            self.fill_table(draws_after)
+            self.refresh_data_status()
             self.refresh_saved_label()
             self.result_text.setPlainText(
                 self.format_result(
                     target_values=target_values,
                     saved_path=str(saved_path),
+                    first_before=first_before,
+                    latest_before=latest_before,
+                    total_before=total_before,
                     stored_date=auto_date.strftime("%d/%m/%Y"),
                     created=created,
+                    latest_after=latest_after,
+                    total_after=total_after,
+                    next_after=next_after,
                 )
             )
             QMessageBox.information(self, "Hoàn tất", "Đã học phương pháp, lưu lại và tính kỳ tiếp theo.")
@@ -276,9 +317,12 @@ class TargetLearningWindow(QWidget):
                 self.learned_methods,
                 top_k=self.top_spin.value(),
             )
-            self.fill_table()
+            first, latest, total, next_date = self.data_status(draws)
+            self.fill_table(draws)
             self.result_text.setPlainText(
                 "ÁP DỤNG BỘ PHƯƠNG PHÁP ĐÃ HỌC\n"
+                f"Dữ liệu đang dùng: {total} kỳ · từ {first} đến {latest}\n"
+                f"Kỳ tiếp theo tham chiếu: {next_date}\n"
                 f"Số phương pháp đang dùng: {len(self.learned_methods)}\n"
                 f"Top tín hiệu tham chiếu kỳ tiếp theo:\n{self.format_values(self.next_signal_values)}\n\n"
                 "Đây là tín hiệu thống kê từ lịch sử và các phương pháp đã fit dãy đã biết, không phải cam kết tương lai."
@@ -286,11 +330,12 @@ class TargetLearningWindow(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, "Không thể áp dụng phương pháp đã học", str(exc))
 
-    def fill_table(self) -> None:
+    def fill_table(self, draws: list[Draw] | None = None) -> None:
+        current_draws = draws if draws is not None else self.load_draws()
         self.table.setRowCount(len(self.learned_methods))
         for row_index, method in enumerate(self.learned_methods):
             next_values = self.engine.signal_values_from_method(
-                self.load_draws(),
+                current_draws,
                 method,
                 top_k=self.top_spin.value(),
             )
@@ -318,14 +363,23 @@ class TargetLearningWindow(QWidget):
         *,
         target_values: tuple[int, ...],
         saved_path: str,
+        first_before: str,
+        latest_before: str,
+        total_before: int,
         stored_date: str,
         created: bool,
+        latest_after: str,
+        total_after: int,
+        next_after: str,
     ) -> str:
         best = self.learned_methods[0] if self.learned_methods else None
         lines = [
             "================ TARGET LEARNING LAB ================",
+            f"Dữ liệu trước khi nhập: {total_before} kỳ · từ {first_before} đến {latest_before}",
             f"Dãy số đã nhập: {self.format_values(target_values)}",
             f"Ngày tự lưu vào lịch sử: {stored_date} ({'thêm mới' if created else 'cập nhật'})",
+            f"Dữ liệu sau khi nhập: {total_after} kỳ · cập nhật đến {latest_after}",
+            f"Kỳ tiếp theo tham chiếu: {next_after}",
             f"Số phương pháp đã lưu: {len(self.learned_methods)}",
             f"File lưu phương pháp: {saved_path}",
             "",

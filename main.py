@@ -11,6 +11,7 @@ from ape.core.exceptions import APEError
 from ape.database.repositories import DrawRepository
 from ape.importers.excel_importer import ExcelDrawImporter
 from ape.importers.latest_excel import import_latest_excel_file
+from ape.importers.replace_data import replace_database_from_excel
 from ape.patterns import StrategyAuditor, StrategyOptimizer, StrategyRechecker
 
 
@@ -51,6 +52,42 @@ def build_parser() -> argparse.ArgumentParser:
         "--recursive",
         action="store_true",
         help="Tìm cả trong các thư mục con.",
+    )
+
+    replace_parser = subparsers.add_parser(
+        "replace-data",
+        help="Backup, xóa sạch database hiện tại và import lại từ file Excel mới.",
+    )
+    replace_parser.add_argument(
+        "--file",
+        default=None,
+        help="Đường dẫn file Excel dùng để nạp lại toàn bộ dữ liệu.",
+    )
+    replace_parser.add_argument(
+        "--latest",
+        action="store_true",
+        help="Tự lấy file Excel mới nhất trong thư mục data hoặc --folder.",
+    )
+    replace_parser.add_argument(
+        "--folder",
+        default=None,
+        help="Thư mục chứa file Excel khi dùng --latest; mặc định là thư mục data của APE.",
+    )
+    replace_parser.add_argument("--sheet", help="Tên sheet, mặc định tự nhận diện.")
+    replace_parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="Khi dùng --latest, tìm cả trong các thư mục con.",
+    )
+    replace_parser.add_argument(
+        "--keep-methods",
+        action="store_true",
+        help="Không reset các file learned_methods/saved_strategy cũ. Mặc định sẽ lưu riêng các file này để học lại từ dữ liệu mới.",
+    )
+    replace_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Xác nhận thao tác xóa sạch dữ liệu cũ và nạp lại từ file mới.",
     )
 
     analyze_parser = subparsers.add_parser("analyze", help="Phân tích mô tả dữ liệu đã lưu trong database.")
@@ -149,6 +186,27 @@ def print_latest_excel_update(app: APEApplication, args: argparse.Namespace) -> 
     for name, value in result.to_rows():
         print(f"{name}: {value}")
     print("====================================================\n")
+
+
+def print_replace_data(app: APEApplication, args: argparse.Namespace) -> None:
+    if not args.yes:
+        raise ValueError(
+            "replace-data sẽ xóa sạch dữ liệu cũ trước khi nạp file mới. "
+            "Hãy thêm --yes nếu anh chắc chắn muốn thực hiện."
+        )
+    result = replace_database_from_excel(
+        file_path=args.file,
+        folder=args.folder,
+        sheet_name=args.sheet,
+        database=app.database,
+        latest=args.latest,
+        recursive=args.recursive,
+        clear_method_memory=not args.keep_methods,
+    )
+    print("\n================ THAY THẾ TOÀN BỘ DỮ LIỆU ================")
+    for name, value in result.to_rows():
+        print(f"{name}: {value}")
+    print("==========================================================\n")
 
 
 def print_strategy_optimization(app: APEApplication, args: argparse.Namespace) -> None:
@@ -307,6 +365,8 @@ def main() -> int:
             print(report.to_json())
         elif args.command == "update-latest":
             print_latest_excel_update(app, args)
+        elif args.command == "replace-data":
+            print_replace_data(app, args)
         elif args.command == "analyze":
             report = AnalysisService(app.database).generate(args.limit)
             if args.json:

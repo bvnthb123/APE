@@ -126,7 +126,7 @@ class TargetLearningWindow(QWidget):
         self.pending_draws_for_next: list[Draw] = []
 
         self.setWindowTitle(f"APE v{VERSION} - Học từ dãy số mới")
-        self.resize(1180, 720)
+        self.resize(1240, 760)
         self.setStyleSheet(TARGET_LEARNING_STYLESHEET)
         self._build_ui()
         self.refresh_data_status()
@@ -153,7 +153,8 @@ class TargetLearningWindow(QWidget):
 
         note = QLabel(
             "Bước 1: bấm 'Tính thử / Tính lại' để APE thử nhiều phương pháp đơn lẻ và tổ hợp. "
-            "Bước này chỉ tính thử, không ghi database. Khi thật sự hài lòng, bấm 'Lưu phương pháp & cập nhật dãy' để đưa dãy vừa nhập vào lịch sử."
+            "Bước này chỉ tính thử, không ghi database. Khi thật sự hài lòng, bấm 'Lưu phương pháp & cập nhật dãy' để đưa dãy vừa nhập vào lịch sử. "
+            "Bạn có thể tăng số phương pháp cần tìm để tool rà rộng hơn; số càng lớn thì thời gian chạy càng lâu."
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: #5E7184; font-style: italic;")
@@ -167,38 +168,64 @@ class TargetLearningWindow(QWidget):
         )
         layout.addWidget(self.data_status_label)
 
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Dãy số kỳ mới"))
+        input_row = QHBoxLayout()
+        input_row.addWidget(QLabel("Dãy số kỳ mới"))
         self.target_input = QLineEdit()
         self.target_input.setPlaceholderText("Ví dụ: 03 11 18 24 36 42")
-        row.addWidget(self.target_input, 1)
+        input_row.addWidget(self.target_input, 1)
 
-        row.addWidget(QLabel("Top"))
+        input_row.addWidget(QLabel("Top"))
         self.top_spin = QSpinBox()
         self.top_spin.setRange(6, 20)
         self.top_spin.setValue(7)
-        row.addWidget(self.top_spin)
+        input_row.addWidget(self.top_spin)
 
-        row.addWidget(QLabel("Lag tối đa"))
+        input_row.addWidget(QLabel("Lag tối đa"))
         self.lag_spin = QSpinBox()
-        self.lag_spin.setRange(1, 20)
-        self.lag_spin.setValue(10)
-        row.addWidget(self.lag_spin)
+        self.lag_spin.setRange(1, 30)
+        self.lag_spin.setValue(12)
+        input_row.addWidget(self.lag_spin)
 
         self.preview_button = QPushButton("Tính thử / Tính lại")
         self.preview_button.clicked.connect(self.preview_from_target)
-        row.addWidget(self.preview_button)
+        input_row.addWidget(self.preview_button)
 
         self.commit_button = QPushButton("Lưu phương pháp & cập nhật dãy")
         self.commit_button.clicked.connect(self.commit_pending_learning)
         self.commit_button.setEnabled(False)
-        row.addWidget(self.commit_button)
+        input_row.addWidget(self.commit_button)
 
         self.apply_button = QPushButton("Áp dụng phương pháp đã học")
         self.apply_button.setObjectName("SecondaryButton")
         self.apply_button.clicked.connect(self.apply_learned_methods)
-        row.addWidget(self.apply_button)
-        layout.addLayout(row)
+        input_row.addWidget(self.apply_button)
+        layout.addLayout(input_row)
+
+        search_row = QHBoxLayout()
+        search_row.addWidget(QLabel("Số phương pháp cần tìm/lưu"))
+        self.method_count_spin = QSpinBox()
+        self.method_count_spin.setRange(20, 300)
+        self.method_count_spin.setSingleStep(10)
+        self.method_count_spin.setValue(80)
+        search_row.addWidget(self.method_count_spin)
+
+        search_row.addWidget(QLabel("Tổ hợp từ top"))
+        self.ensemble_pool_spin = QSpinBox()
+        self.ensemble_pool_spin.setRange(5, 80)
+        self.ensemble_pool_spin.setSingleStep(5)
+        self.ensemble_pool_spin.setValue(30)
+        search_row.addWidget(self.ensemble_pool_spin)
+
+        search_row.addWidget(QLabel("Support rà đến"))
+        self.support_max_spin = QSpinBox()
+        self.support_max_spin.setRange(3, 10)
+        self.support_max_spin.setValue(5)
+        search_row.addWidget(self.support_max_spin)
+
+        hint = QLabel("Gợi ý: 80/30/5 là cân bằng. 150/50/7 sẽ rà sâu hơn nhưng chậm hơn.")
+        hint.setStyleSheet("color: #5E7184;")
+        search_row.addWidget(hint, 1)
+        layout.addLayout(search_row)
 
         self.saved_label = QLabel()
         self.saved_label.setStyleSheet("font-weight: 700; color: #005BAC;")
@@ -265,7 +292,10 @@ class TargetLearningWindow(QWidget):
             self.commit_button.setEnabled(False)
             self.result_text.setPlainText(
                 "Đang tính thử nhiều cách và tổ hợp phương pháp...\n"
-                "Bước này KHÔNG lưu dãy vào database."
+                "Bước này KHÔNG lưu dãy vào database.\n"
+                f"Đang yêu cầu {self.method_count_spin.value()} phương pháp, "
+                f"tổ hợp từ top {self.ensemble_pool_spin.value()}, "
+                f"support 1→{self.support_max_spin.value()}."
             )
             QApplication.processEvents()
 
@@ -278,10 +308,10 @@ class TargetLearningWindow(QWidget):
                 target_values,
                 top_k=self.top_spin.value(),
                 max_lag=self.lag_spin.value(),
-                support_values=(1, 2, 3),
+                support_values=tuple(range(1, self.support_max_spin.value() + 1)),
                 strategy_mode="full",
-                limit=20,
-                ensemble_pool=14,
+                limit=self.method_count_spin.value(),
+                ensemble_pool=self.ensemble_pool_spin.value(),
             )
             if not self.learned_methods:
                 self.pending_target_values = None
@@ -469,6 +499,9 @@ class TargetLearningWindow(QWidget):
             "================ TÍNH THỬ - CHƯA LƯU ================",
             f"Dữ liệu hiện tại: {total_before} kỳ · từ {first_before} đến {latest_before}",
             f"Dãy số đang fit thử: {self.format_values(target_values)}",
+            f"Số phương pháp đã tìm thấy: {len(self.learned_methods)}",
+            f"Thiết lập rà: Top {self.top_spin.value()} · Lag tối đa {self.lag_spin.value()} · "
+            f"Support 1→{self.support_max_spin.value()} · Tổ hợp từ top {self.ensemble_pool_spin.value()}",
             f"Nếu lưu, dãy này sẽ được ghi là kỳ: {pending_date}",
             f"Kỳ tiếp theo tham chiếu sau khi lưu sẽ là: {next_after}",
             "Trạng thái: CHƯA ghi database, CHƯA thay đổi dữ liệu lịch sử.",
@@ -491,7 +524,7 @@ class TargetLearningWindow(QWidget):
                 "TOP TÍN HIỆU THAM CHIẾU KỲ TIẾP THEO NẾU BẠN LƯU DÃY NÀY",
                 self.format_values(self.next_signal_values),
                 "",
-                "Nếu chưa hài lòng, hãy chỉnh Top/Lag tối đa hoặc bấm lại 'Tính thử / Tính lại'. Chỉ bấm lưu khi bạn muốn đưa dãy này vào lịch sử.",
+                "Nếu chưa hài lòng, hãy tăng số phương pháp cần tìm, tăng tổ hợp từ top, tăng support/lag hoặc bấm lại 'Tính thử / Tính lại'. Chỉ bấm lưu khi bạn muốn đưa dãy này vào lịch sử.",
             ]
         )
         return "\n".join(lines)
@@ -549,7 +582,6 @@ class TargetLearningWindow(QWidget):
     @staticmethod
     def format_values(values) -> str:
         return " - ".join(f"{int(value):02d}" for value in values) if values else "Chưa đủ dữ liệu"
-
 
 
 def run_target_learning(database: DatabaseManager | None = None) -> int:

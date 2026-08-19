@@ -33,11 +33,23 @@ from ape.patterns.strategy_choice import (
     StrategyChoiceEngine,
     saved_strategy_signal_values,
 )
+from ape.patterns.target_learning import (
+    LearnedMethod,
+    LearnedMethodStore,
+    TargetLearningEngine,
+    TargetLearningResult,
+    build_target_draw,
+    learned_method_signal_values,
+    next_auto_draw_date,
+    parse_target_numbers,
+)
 
 __all__ = [
     "BacktestSummary",
     "CandidateSignal",
     "DrawStructure",
+    "LearnedMethod",
+    "LearnedMethodStore",
     "PatternMiner",
     "PatternRule",
     "RecheckEvaluation",
@@ -57,5 +69,11 @@ __all__ = [
     "StrategyOptimizer",
     "StrategyRechecker",
     "StructureProfile",
+    "TargetLearningEngine",
+    "TargetLearningResult",
+    "build_target_draw",
+    "learned_method_signal_values",
+    "next_auto_draw_date",
+    "parse_target_numbers",
     "saved_strategy_signal_values",
 ]

@@ -121,6 +121,9 @@ class TargetLearningWindow(QWidget):
         self.store = LearnedMethodStore()
         self.learned_methods: list[LearnedMethod] = []
         self.next_signal_values: tuple[int, ...] = ()
+        self.pending_target_values: tuple[int, ...] | None = None
+        self.pending_draw_date: date | None = None
+        self.pending_draws_for_next: list[Draw] = []
 
         self.setWindowTitle(f"APE v{VERSION} - Học từ dãy số mới")
         self.resize(1180, 720)
@@ -149,9 +152,8 @@ class TargetLearningWindow(QWidget):
         layout.addWidget(header)
 
         note = QLabel(
-            "Nhập dãy số đã có kết quả thật. APE sẽ thử nhiều phương pháp đơn lẻ và tổ hợp để "
-            "khớp lại dãy đó, lưu các phương pháp tốt nhất, đưa dãy vào dữ liệu lịch sử, rồi tính "
-            "Top tín hiệu tham chiếu cho kỳ tiếp theo bằng các phương pháp đã học."
+            "Bước 1: bấm 'Tính thử / Tính lại' để APE thử nhiều phương pháp đơn lẻ và tổ hợp. "
+            "Bước này chỉ tính thử, không ghi database. Khi thật sự hài lòng, bấm 'Lưu phương pháp & cập nhật dãy' để đưa dãy vừa nhập vào lịch sử."
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: #5E7184; font-style: italic;")
@@ -183,9 +185,14 @@ class TargetLearningWindow(QWidget):
         self.lag_spin.setValue(10)
         row.addWidget(self.lag_spin)
 
-        self.learn_button = QPushButton("Học từ dãy này và tính kỳ tiếp theo")
-        self.learn_button.clicked.connect(self.learn_from_target)
-        row.addWidget(self.learn_button)
+        self.preview_button = QPushButton("Tính thử / Tính lại")
+        self.preview_button.clicked.connect(self.preview_from_target)
+        row.addWidget(self.preview_button)
+
+        self.commit_button = QPushButton("Lưu phương pháp & cập nhật dãy")
+        self.commit_button.clicked.connect(self.commit_pending_learning)
+        self.commit_button.setEnabled(False)
+        row.addWidget(self.commit_button)
 
         self.apply_button = QPushButton("Áp dụng phương pháp đã học")
         self.apply_button.setObjectName("SecondaryButton")
@@ -213,7 +220,7 @@ class TargetLearningWindow(QWidget):
 
         self.result_text = QPlainTextEdit()
         self.result_text.setReadOnly(True)
-        self.result_text.setPlaceholderText("Kết quả học và Top kỳ tiếp theo sẽ hiển thị tại đây.")
+        self.result_text.setPlaceholderText("Kết quả tính thử và Top kỳ tiếp theo sẽ hiển thị tại đây.")
         layout.addWidget(self.result_text, 1)
 
     def load_draws(self) -> list[Draw]:
@@ -241,18 +248,30 @@ class TargetLearningWindow(QWidget):
             f"dãy mới bạn nhập sẽ được lưu là kỳ tiếp theo: {next_date}"
         )
 
-    def learn_from_target(self) -> None:
+    def preview_from_target(self) -> None:
+        """Fit methods against the typed row without saving anything."""
         try:
             target_values = parse_target_numbers(self.target_input.text())
             draws_before = self.load_draws()
             if len(draws_before) < 30:
-                QMessageBox.information(self, "Chưa đủ dữ liệu", "Cần có ít nhất khoảng 30 kỳ lịch sử để học phương pháp.")
+                QMessageBox.information(
+                    self,
+                    "Chưa đủ dữ liệu",
+                    "Cần có ít nhất khoảng 30 kỳ lịch sử để học phương pháp.",
+                )
                 return
 
-            first_before, latest_before, total_before, next_date_label = self.data_status(draws_before)
-            self.learn_button.setEnabled(False)
-            self.result_text.setPlainText("Đang thử nhiều cách tính và tổ hợp phương pháp...")
+            self.preview_button.setEnabled(False)
+            self.commit_button.setEnabled(False)
+            self.result_text.setPlainText(
+                "Đang tính thử nhiều cách và tổ hợp phương pháp...\n"
+                "Bước này KHÔNG lưu dãy vào database."
+            )
             QApplication.processEvents()
+
+            auto_date = next_auto_draw_date(draws_before)
+            hypothetical_draw = build_target_draw(auto_date, target_values)
+            hypothetical_draws = list(draws_before) + [hypothetical_draw]
 
             self.learned_methods = self.engine.learn_methods(
                 draws_before,
@@ -265,16 +284,85 @@ class TargetLearningWindow(QWidget):
                 ensemble_pool=14,
             )
             if not self.learned_methods:
-                QMessageBox.information(self, "Chưa tìm được phương pháp", "Không tìm được phương pháp đủ dữ liệu để lưu.")
+                self.pending_target_values = None
+                self.pending_draw_date = None
+                self.pending_draws_for_next = []
+                QMessageBox.information(
+                    self,
+                    "Chưa tìm được phương pháp",
+                    "Không tìm được phương pháp đủ dữ liệu để hiển thị.",
+                )
                 return
 
-            saved_path = self.store.save(self.learned_methods)
-            auto_date = next_auto_draw_date(draws_before)
-            draw = build_target_draw(auto_date, target_values)
-            with self.database.session() as session:
-                _, created = DrawRepository(session).upsert(draw)
+            self.pending_target_values = target_values
+            self.pending_draw_date = auto_date
+            self.pending_draws_for_next = hypothetical_draws
+            self.next_signal_values = self.engine.combined_signal_values(
+                hypothetical_draws,
+                self.learned_methods,
+                top_k=self.top_spin.value(),
+            )
 
-            draws_after = self.load_draws()
+            self.fill_table(hypothetical_draws)
+            self.commit_button.setEnabled(True)
+            first, latest, total, next_date_label = self.data_status(draws_before)
+            self.result_text.setPlainText(
+                self.format_preview_result(
+                    target_values=target_values,
+                    first_before=first,
+                    latest_before=latest,
+                    total_before=total,
+                    pending_date=auto_date.strftime("%d/%m/%Y"),
+                    next_after=next_auto_draw_date(hypothetical_draws).strftime("%d/%m/%Y"),
+                )
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Không thể tính thử", str(exc))
+        finally:
+            self.preview_button.setEnabled(True)
+
+    def commit_pending_learning(self) -> None:
+        """Persist the previewed methods and save the target row only after confirmation."""
+        if not self.learned_methods or self.pending_target_values is None or self.pending_draw_date is None:
+            QMessageBox.information(
+                self,
+                "Chưa có kết quả tính thử",
+                "Hãy bấm 'Tính thử / Tính lại' trước, sau đó mới lưu.",
+            )
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "Xác nhận lưu",
+            (
+                "Bạn có chắc muốn lưu bộ phương pháp này và cập nhật dãy vừa nhập vào dữ liệu lịch sử không?\n\n"
+                "Nếu chưa hài lòng, hãy bấm 'Tính thử / Tính lại' thay vì lưu."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            draws_before = self.load_draws()
+            first_before, latest_before, total_before, _next_before = self.data_status(draws_before)
+            target_values = self.pending_target_values
+            stored_date = self.pending_draw_date
+
+            already_latest = bool(draws_before) and tuple(draws_before[-1].numbers) == target_values
+            saved_path = self.store.save(self.learned_methods)
+            created = False
+
+            if already_latest:
+                draws_after = draws_before
+                stored_date = draws_before[-1].draw_date
+            else:
+                draw = build_target_draw(stored_date, target_values)
+                with self.database.session() as session:
+                    _, created = DrawRepository(session).upsert(draw)
+                draws_after = self.load_draws()
+
             _methods, self.next_signal_values = learned_method_signal_values(
                 draws_after,
                 store=self.store,
@@ -285,32 +373,40 @@ class TargetLearningWindow(QWidget):
             self.fill_table(draws_after)
             self.refresh_data_status()
             self.refresh_saved_label()
+            self.commit_button.setEnabled(False)
             self.result_text.setPlainText(
-                self.format_result(
+                self.format_saved_result(
                     target_values=target_values,
                     saved_path=str(saved_path),
                     first_before=first_before,
                     latest_before=latest_before,
                     total_before=total_before,
-                    stored_date=auto_date.strftime("%d/%m/%Y"),
+                    stored_date=stored_date.strftime("%d/%m/%Y"),
                     created=created,
+                    already_latest=already_latest,
                     latest_after=latest_after,
                     total_after=total_after,
                     next_after=next_after,
                 )
             )
-            QMessageBox.information(self, "Hoàn tất", "Đã học phương pháp, lưu lại và tính kỳ tiếp theo.")
+            QMessageBox.information(
+                self,
+                "Hoàn tất",
+                "Đã lưu phương pháp và cập nhật dữ liệu an toàn.",
+            )
         except Exception as exc:
-            QMessageBox.critical(self, "Không thể học từ dãy số", str(exc))
-        finally:
-            self.learn_button.setEnabled(True)
+            QMessageBox.critical(self, "Không thể lưu", str(exc))
 
     def apply_learned_methods(self) -> None:
         try:
             draws = self.load_draws()
             self.learned_methods = list(self.store.load())
             if not self.learned_methods:
-                QMessageBox.information(self, "Chưa có phương pháp", "Hãy nhập dãy số mới để tool học phương pháp trước.")
+                QMessageBox.information(
+                    self,
+                    "Chưa có phương pháp",
+                    "Hãy nhập dãy số mới để tool học phương pháp trước.",
+                )
                 return
             self.next_signal_values = self.engine.combined_signal_values(
                 draws,
@@ -358,7 +454,49 @@ class TargetLearningWindow(QWidget):
                 f"lưu lúc {best.saved_at or '-'}"
             )
 
-    def format_result(
+    def format_preview_result(
+        self,
+        *,
+        target_values: tuple[int, ...],
+        first_before: str,
+        latest_before: str,
+        total_before: int,
+        pending_date: str,
+        next_after: str,
+    ) -> str:
+        best = self.learned_methods[0] if self.learned_methods else None
+        lines = [
+            "================ TÍNH THỬ - CHƯA LƯU ================",
+            f"Dữ liệu hiện tại: {total_before} kỳ · từ {first_before} đến {latest_before}",
+            f"Dãy số đang fit thử: {self.format_values(target_values)}",
+            f"Nếu lưu, dãy này sẽ được ghi là kỳ: {pending_date}",
+            f"Kỳ tiếp theo tham chiếu sau khi lưu sẽ là: {next_after}",
+            "Trạng thái: CHƯA ghi database, CHƯA thay đổi dữ liệu lịch sử.",
+            "",
+        ]
+        if best is not None:
+            lines.extend(
+                [
+                    "PHƯƠNG PHÁP KHỚP TỐT NHẤT TRONG LẦN TÍNH THỬ",
+                    f"Loại: {'Tổ hợp' if best.method_type == 'ensemble' else 'Đơn lẻ'}",
+                    f"Cách tính: {best.label}",
+                    f"Top fit dãy vừa nhập: {best.fit_signal_label}",
+                    f"Số trùng: {best.fit_match_count}/6",
+                    f"Các số trùng: {best.fit_match_label}",
+                    "",
+                ]
+            )
+        lines.extend(
+            [
+                "TOP TÍN HIỆU THAM CHIẾU KỲ TIẾP THEO NẾU BẠN LƯU DÃY NÀY",
+                self.format_values(self.next_signal_values),
+                "",
+                "Nếu chưa hài lòng, hãy chỉnh Top/Lag tối đa hoặc bấm lại 'Tính thử / Tính lại'. Chỉ bấm lưu khi bạn muốn đưa dãy này vào lịch sử.",
+            ]
+        )
+        return "\n".join(lines)
+
+    def format_saved_result(
         self,
         *,
         target_values: tuple[int, ...],
@@ -368,17 +506,19 @@ class TargetLearningWindow(QWidget):
         total_before: int,
         stored_date: str,
         created: bool,
+        already_latest: bool,
         latest_after: str,
         total_after: int,
         next_after: str,
     ) -> str:
         best = self.learned_methods[0] if self.learned_methods else None
+        save_note = "không lưu lặp vì dãy này đã là kỳ mới nhất" if already_latest else ("thêm mới" if created else "cập nhật")
         lines = [
-            "================ TARGET LEARNING LAB ================",
-            f"Dữ liệu trước khi nhập: {total_before} kỳ · từ {first_before} đến {latest_before}",
+            "================ ĐÃ LƯU TARGET LEARNING ================",
+            f"Dữ liệu trước khi lưu: {total_before} kỳ · từ {first_before} đến {latest_before}",
             f"Dãy số đã nhập: {self.format_values(target_values)}",
-            f"Ngày tự lưu vào lịch sử: {stored_date} ({'thêm mới' if created else 'cập nhật'})",
-            f"Dữ liệu sau khi nhập: {total_after} kỳ · cập nhật đến {latest_after}",
+            f"Ngày lưu vào lịch sử: {stored_date} ({save_note})",
+            f"Dữ liệu sau khi lưu: {total_after} kỳ · cập nhật đến {latest_after}",
             f"Kỳ tiếp theo tham chiếu: {next_after}",
             f"Số phương pháp đã lưu: {len(self.learned_methods)}",
             f"File lưu phương pháp: {saved_path}",

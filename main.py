@@ -10,6 +10,7 @@ from ape.core.app import APEApplication
 from ape.core.exceptions import APEError
 from ape.database.repositories import DrawRepository
 from ape.importers.excel_importer import ExcelDrawImporter
+from ape.importers.latest_excel import import_latest_excel_file
 from ape.patterns import StrategyAuditor, StrategyOptimizer, StrategyRechecker
 
 
@@ -30,6 +31,27 @@ def build_parser() -> argparse.ArgumentParser:
     import_parser = subparsers.add_parser("import", help="Kiểm tra và import file Excel vào database.")
     import_parser.add_argument("file", help="Đường dẫn file Excel.")
     import_parser.add_argument("--sheet", help="Tên sheet, mặc định tự nhận diện.")
+
+    update_latest_parser = subparsers.add_parser(
+        "update-latest",
+        help="Tự tìm file Excel mới nhất trong thư mục dữ liệu và cập nhật database.",
+    )
+    update_latest_parser.add_argument(
+        "--folder",
+        default=None,
+        help="Thư mục chứa file Excel; mặc định là thư mục data của APE.",
+    )
+    update_latest_parser.add_argument("--sheet", help="Tên sheet, mặc định tự nhận diện.")
+    update_latest_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Chỉ kiểm tra file mới nhất, không ghi database.",
+    )
+    update_latest_parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="Tìm cả trong các thư mục con.",
+    )
 
     analyze_parser = subparsers.add_parser("analyze", help="Phân tích mô tả dữ liệu đã lưu trong database.")
     analyze_parser.add_argument("--limit", type=int, default=10, help="Số lượng mục hiển thị trong mỗi nhóm.")
@@ -112,6 +134,21 @@ def parse_iso_date(value: str | None, *, default: date | None = None) -> date:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("Ngày phải nhập theo dạng YYYY-MM-DD, ví dụ 2026-03-01.") from exc
+
+
+def print_latest_excel_update(app: APEApplication, args: argparse.Namespace) -> None:
+    result = import_latest_excel_file(
+        folder=args.folder,
+        sheet_name=args.sheet,
+        database=app.database,
+        dry_run=args.dry_run,
+        recursive=args.recursive,
+    )
+    title = "KIỂM TRA FILE EXCEL MỚI NHẤT" if args.dry_run else "CẬP NHẬT TỪ FILE EXCEL MỚI NHẤT"
+    print(f"\n================ {title} ================")
+    for name, value in result.to_rows():
+        print(f"{name}: {value}")
+    print("====================================================\n")
 
 
 def print_strategy_optimization(app: APEApplication, args: argparse.Namespace) -> None:
@@ -268,6 +305,8 @@ def main() -> int:
         elif args.command == "import":
             report = ExcelDrawImporter(app.database).import_file(args.file, args.sheet)
             print(report.to_json())
+        elif args.command == "update-latest":
+            print_latest_excel_update(app, args)
         elif args.command == "analyze":
             report = AnalysisService(app.database).generate(args.limit)
             if args.json:

@@ -11,7 +11,7 @@ guaranteed.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from itertools import combinations
@@ -34,6 +34,8 @@ WEEKDAY_NAMES = (
     "Thứ Bảy",
     "Chủ Nhật",
 )
+NUMBER_MIN = 1
+NUMBER_MAX = 45
 
 
 @dataclass(slots=True, frozen=True)
@@ -66,10 +68,18 @@ class LearnedMethod:
     def fit_match_label(self) -> str:
         return format_values(self.fit_matched_values) if self.fit_matched_values else "-"
 
+    @property
+    def type_label(self) -> str:
+        if self.method_type == "ensemble":
+            return "Tổ hợp"
+        if self.method_type == "rescue":
+            return "Rescue"
+        return "Đơn lẻ"
+
     def to_row(self, rank: int, next_values: Sequence[int] = ()) -> tuple[str, ...]:
         return (
             str(rank),
-            "Tổ hợp" if self.method_type == "ensemble" else "Đơn lẻ",
+            self.type_label,
             self.label,
             self.fit_signal_label,
             str(self.fit_match_count),
@@ -226,13 +236,19 @@ class TargetLearningEngine:
             support_values=support_values,
             strategy_mode=strategy_mode,
         )
+        rescue_methods = self.evaluate_rescue_methods(
+            draws,
+            target,
+            top_k=top_k,
+            max_lag=max_lag,
+        )
         ensemble_methods = self.evaluate_ensemble_methods(
             draws,
             target,
             individual_methods[:ensemble_pool],
             top_k=top_k,
         )
-        methods = individual_methods + ensemble_methods
+        methods = individual_methods + rescue_methods + ensemble_methods
         methods.sort(key=lambda item: (item.fit_match_count, item.fit_score), reverse=True)
         return methods[:limit]
 
@@ -279,6 +295,64 @@ class TargetLearningEngine:
         methods.sort(key=lambda item: (item.fit_match_count, item.fit_score), reverse=True)
         return methods
 
+    def evaluate_rescue_methods(
+        self,
+        draws: Sequence[Draw],
+        target: tuple[int, ...],
+        *,
+        top_k: int,
+        max_lag: int,
+    ) -> list[LearnedMethod]:
+        """Evaluate broader non-pattern strategies against the known target."""
+        labels = self.rescue_labels(max_lag=max_lag)
+        methods: list[LearnedMethod] = []
+        seen: set[str] = set()
+        for label in labels:
+            if label in seen:
+                continue
+            seen.add(label)
+            scores = self.rescue_scores(draws, label)
+            signal_values = self.values_from_scores(scores, top_k=top_k)
+            matched = tuple(sorted(set(signal_values) & set(target)))
+            fit_signal_score = sum(scores.get(value, 0.0) for value in signal_values)
+            methods.append(
+                LearnedMethod(
+                    method_type="rescue",
+                    label=label,
+                    configs=tuple(),
+                    top_k=top_k,
+                    fit_signal_values=signal_values,
+                    fit_target_values=target,
+                    fit_matched_values=matched,
+                    fit_score=len(matched) * 1500 + fit_signal_score,
+                    saved_at=datetime.now().isoformat(timespec="seconds"),
+                )
+            )
+        methods.sort(key=lambda item: (item.fit_match_count, item.fit_score), reverse=True)
+        return methods
+
+    def rescue_labels(self, *, max_lag: int) -> list[str]:
+        windows = (20, 40, 80, 160, 0)
+        labels: list[str] = []
+        for window in windows:
+            label_window = "all" if window == 0 else str(window)
+            labels.append(f"Rescue|hot_recent|window={label_window}")
+            labels.append(f"Rescue|cold_gap|window={label_window}")
+            labels.append(f"Rescue|hybrid_hot_gap|window={label_window}")
+        labels.extend(
+            [
+                "Rescue|same_weekday|window=all",
+                "Rescue|same_weekday|window=120",
+                "Rescue|recent_overlap|lags=1,2,3,5,8,13",
+                "Rescue|neighbor_shift|distance=1",
+                "Rescue|neighbor_shift|distance=2",
+            ]
+        )
+        for lag in range(1, max_lag + 1):
+            labels.append(f"Rescue|transition_loose|lag={lag}")
+            labels.append(f"Rescue|pair_follow|lag={lag}")
+        return labels
+
     def evaluate_ensemble_methods(
         self,
         draws: Sequence[Draw],
@@ -315,6 +389,74 @@ class TargetLearningEngine:
         methods.sort(key=lambda item: (item.fit_match_count, item.fit_score), reverse=True)
         return methods
 
+    def rescue_scores(self, draws: Sequence[Draw], label: str) -> dict[int, float]:
+        parts = self.parse_rescue_label(label)
+        kind = parts.get("kind", "")
+        scores: dict[int, float] = defaultdict(float)
+        if not draws:
+            return scores
+
+        if kind == "hot_recent":
+            for value, count in self.frequency_counts(draws, parts).items():
+                scores[value] += float(count)
+        elif kind == "cold_gap":
+            for value, gap in self.gap_counts(draws).items():
+                scores[value] += float(gap)
+        elif kind == "hybrid_hot_gap":
+            freq = self.frequency_counts(draws, parts)
+            gaps = self.gap_counts(draws)
+            recent = self.frequency_counts(draws, {"window": "20"})
+            for value in range(NUMBER_MIN, NUMBER_MAX + 1):
+                scores[value] += freq.get(value, 0) * 2.0
+                scores[value] += gaps.get(value, 0) * 0.35
+                scores[value] += recent.get(value, 0) * 0.6
+        elif kind == "same_weekday":
+            target_weekday = next_auto_draw_date(draws).weekday()
+            subset = [draw for draw in self.windowed_draws(draws, parts) if draw.weekday_index == target_weekday]
+            if not subset:
+                subset = list(draws)
+            for value, count in self.count_values(subset).items():
+                scores[value] += float(count)
+        elif kind == "recent_overlap":
+            lags = [int(item) for item in parts.get("lags", "1,2,3").split(",") if item]
+            total = len(draws)
+            for lag in lags:
+                if lag <= 0 or lag > total:
+                    continue
+                weight = 1.0 / max(1, lag)
+                for value in draws[-lag].numbers:
+                    scores[value] += 10.0 * weight
+        elif kind == "neighbor_shift":
+            distance = int(parts.get("distance", "1"))
+            freq = self.frequency_counts(draws, {"window": "80"})
+            for value in draws[-1].numbers:
+                for candidate in (value - distance, value + distance):
+                    if NUMBER_MIN <= candidate <= NUMBER_MAX:
+                        scores[candidate] += 10.0 + freq.get(candidate, 0)
+        elif kind == "transition_loose":
+            lag = int(parts.get("lag", "1"))
+            anchor = set(draws[-1].numbers)
+            for index in range(0, len(draws) - lag):
+                overlap = len(anchor & set(draws[index].numbers))
+                if overlap <= 0:
+                    continue
+                for value in draws[index + lag].numbers:
+                    scores[value] += float(overlap)
+        elif kind == "pair_follow":
+            lag = int(parts.get("lag", "1"))
+            anchor = set(draws[-1].numbers)
+            for index in range(0, len(draws) - lag):
+                overlap = len(anchor & set(draws[index].numbers))
+                if overlap < 2:
+                    continue
+                for value in draws[index + lag].numbers:
+                    scores[value] += float(overlap * overlap)
+
+        if not scores:
+            for value, count in self.count_values(draws).items():
+                scores[value] = float(count)
+        return dict(scores)
+
     def ensemble_signal_values(
         self,
         draws: Sequence[Draw],
@@ -338,6 +480,11 @@ class TargetLearningEngine:
         top_k: int | None = None,
     ) -> tuple[int, ...]:
         actual_top_k = top_k or method.top_k
+        if method.method_type == "rescue":
+            return self.values_from_scores(
+                self.rescue_scores(draws, method.label),
+                top_k=actual_top_k,
+            )
         if not method.configs:
             return ()
         if method.method_type == "ensemble" or len(method.configs) > 1:
@@ -358,6 +505,52 @@ class TargetLearningEngine:
             signals = self.signal_values_from_method(draws, method, top_k=top_k)
             for rank, value in enumerate(signals, 1):
                 scores[value] += weight * (top_k - rank + 1)
+        ranked = sorted(scores.items(), key=lambda item: (item[1], item[0]), reverse=True)
+        return tuple(value for value, _score in ranked[:top_k])
+
+    @staticmethod
+    def parse_rescue_label(label: str) -> dict[str, str]:
+        chunks = label.split("|")
+        result: dict[str, str] = {"kind": chunks[1] if len(chunks) > 1 else ""}
+        for chunk in chunks[2:]:
+            if "=" not in chunk:
+                continue
+            key, value = chunk.split("=", 1)
+            result[key] = value
+        return result
+
+    @staticmethod
+    def windowed_draws(draws: Sequence[Draw], parts: dict[str, str]) -> list[Draw]:
+        window_text = parts.get("window", "all")
+        if window_text == "all":
+            return list(draws)
+        window = max(1, int(window_text))
+        return list(draws[-window:])
+
+    def frequency_counts(self, draws: Sequence[Draw], parts: dict[str, str]) -> Counter[int]:
+        return self.count_values(self.windowed_draws(draws, parts))
+
+    @staticmethod
+    def count_values(draws: Sequence[Draw]) -> Counter[int]:
+        counter: Counter[int] = Counter()
+        for draw in draws:
+            counter.update(draw.numbers)
+        return counter
+
+    @staticmethod
+    def gap_counts(draws: Sequence[Draw]) -> dict[int, int]:
+        gaps: dict[int, int] = {}
+        for value in range(NUMBER_MIN, NUMBER_MAX + 1):
+            gap = len(draws) + 1
+            for distance, draw in enumerate(reversed(draws), 1):
+                if value in draw.numbers:
+                    gap = distance
+                    break
+            gaps[value] = gap
+        return gaps
+
+    @staticmethod
+    def values_from_scores(scores: dict[int, float], *, top_k: int) -> tuple[int, ...]:
         ranked = sorted(scores.items(), key=lambda item: (item[1], item[0]), reverse=True)
         return tuple(value for value, _score in ranked[:top_k])
 

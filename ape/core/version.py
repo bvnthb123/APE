@@ -2,6 +2,6 @@
 
 APP_NAME = "Adaptive Prediction Engine"
 APP_CODE = "APE"
-VERSION = "2.2.1"
-BUILD_NAME = "Target Rescue Search"
+VERSION = "2.2.2"
+BUILD_NAME = "Target Diagnostic Gate"
 AUTHOR = "Nguyen Thanh Chung + ChatGPT"

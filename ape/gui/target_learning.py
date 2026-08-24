@@ -38,6 +38,7 @@ from ape.patterns.target_learning import (
     parse_target_numbers,
 )
 
+MIN_SAVE_FIT_COUNT = 3
 
 TARGET_LEARNING_STYLESHEET = """
 QWidget {
@@ -124,6 +125,7 @@ class TargetLearningWindow(QWidget):
         self.pending_target_values: tuple[int, ...] | None = None
         self.pending_draw_date: date | None = None
         self.pending_draws_for_next: list[Draw] = []
+        self.pending_base_draws: list[Draw] = []
 
         self.setWindowTitle(f"APE v{VERSION} - Học từ dãy số mới")
         self.resize(1240, 760)
@@ -154,7 +156,7 @@ class TargetLearningWindow(QWidget):
         note = QLabel(
             "Bước 1: bấm 'Tính thử / Tính lại' để APE thử nhiều phương pháp đơn lẻ và tổ hợp. "
             "Bước này chỉ tính thử, không ghi database. Khi thật sự hài lòng, bấm 'Lưu phương pháp & cập nhật dãy' để đưa dãy vừa nhập vào lịch sử. "
-            "Bạn có thể tăng số phương pháp cần tìm để tool rà rộng hơn; số càng lớn thì thời gian chạy càng lâu."
+            "Nếu fit thấp, APE sẽ hiển thị Target Diagnostic và chặn lưu phương pháp yếu."
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: #5E7184; font-style: italic;")
@@ -222,7 +224,7 @@ class TargetLearningWindow(QWidget):
         self.support_max_spin.setValue(5)
         search_row.addWidget(self.support_max_spin)
 
-        hint = QLabel("Gợi ý: 80/30/5 là cân bằng. 150/50/7 sẽ rà sâu hơn nhưng chậm hơn.")
+        hint = QLabel("Gợi ý: tăng số phương pháp không luôn làm fit tốt hơn; xem Target Diagnostic nếu fit vẫn thấp.")
         hint.setStyleSheet("color: #5E7184;")
         search_row.addWidget(hint, 1)
         layout.addLayout(search_row)
@@ -247,7 +249,7 @@ class TargetLearningWindow(QWidget):
 
         self.result_text = QPlainTextEdit()
         self.result_text.setReadOnly(True)
-        self.result_text.setPlaceholderText("Kết quả tính thử và Top kỳ tiếp theo sẽ hiển thị tại đây.")
+        self.result_text.setPlaceholderText("Kết quả tính thử và Target Diagnostic sẽ hiển thị tại đây.")
         layout.addWidget(self.result_text, 1)
 
     def load_draws(self) -> list[Draw]:
@@ -317,6 +319,7 @@ class TargetLearningWindow(QWidget):
                 self.pending_target_values = None
                 self.pending_draw_date = None
                 self.pending_draws_for_next = []
+                self.pending_base_draws = []
                 QMessageBox.information(
                     self,
                     "Chưa tìm được phương pháp",
@@ -327,6 +330,7 @@ class TargetLearningWindow(QWidget):
             self.pending_target_values = target_values
             self.pending_draw_date = auto_date
             self.pending_draws_for_next = hypothetical_draws
+            self.pending_base_draws = draws_before
             self.next_signal_values = self.engine.combined_signal_values(
                 hypothetical_draws,
                 self.learned_methods,
@@ -335,7 +339,7 @@ class TargetLearningWindow(QWidget):
 
             self.fill_table(hypothetical_draws)
             self.commit_button.setEnabled(True)
-            first, latest, total, next_date_label = self.data_status(draws_before)
+            first, latest, total, _next_date_label = self.data_status(draws_before)
             self.result_text.setPlainText(
                 self.format_preview_result(
                     target_values=target_values,
@@ -344,6 +348,7 @@ class TargetLearningWindow(QWidget):
                     total_before=total,
                     pending_date=auto_date.strftime("%d/%m/%Y"),
                     next_after=next_auto_draw_date(hypothetical_draws).strftime("%d/%m/%Y"),
+                    draws_for_diagnostic=draws_before,
                 )
             )
         except Exception as exc:
@@ -358,6 +363,19 @@ class TargetLearningWindow(QWidget):
                 self,
                 "Chưa có kết quả tính thử",
                 "Hãy bấm 'Tính thử / Tính lại' trước, sau đó mới lưu.",
+            )
+            return
+
+        best_fit = max((method.fit_match_count for method in self.learned_methods), default=0)
+        if best_fit < MIN_SAVE_FIT_COUNT:
+            QMessageBox.warning(
+                self,
+                "Fit quá thấp - không lưu",
+                (
+                    f"Phương pháp tốt nhất hiện chỉ khớp {best_fit}/6.\n\n"
+                    "APE sẽ không lưu bộ phương pháp yếu này vì có thể làm lệch các lần tính sau. "
+                    "Hãy xem Target Diagnostic, cập nhật lại dữ liệu hoặc thử kỳ khác."
+                ),
             )
             return
 
@@ -484,6 +502,69 @@ class TargetLearningWindow(QWidget):
                 f"lưu lúc {best.saved_at or '-'}"
             )
 
+    def diagnostic_lines(self, draws: list[Draw], target_values: tuple[int, ...]) -> list[str]:
+        """Build a compact diagnostic explaining why a target row fits poorly."""
+        if not self.learned_methods:
+            return []
+
+        depths = (7, 10, 15, 20, 30, 45)
+        target_set = set(target_values)
+        combined = self.engine.combined_signal_values(draws, self.learned_methods, top_k=45)
+        combined_positions = {value: index + 1 for index, value in enumerate(combined)}
+        method_rank_cache: list[tuple[LearnedMethod, tuple[int, ...]]] = [
+            (method, self.engine.signal_values_from_method(draws, method, top_k=45))
+            for method in self.learned_methods
+        ]
+
+        lines = [
+            "TARGET DIAGNOSTIC",
+            "Mục tiêu: xác định dãy này có tín hiệu lịch sử đủ mạnh hay không.",
+        ]
+        for depth in depths:
+            values = set(combined[:depth])
+            hit_values = tuple(sorted(values & target_set))
+            lines.append(
+                f"Top {depth:02d}: khớp {len(hit_values)}/6"
+                + (f" · {self.format_values(hit_values)}" if hit_values else "")
+            )
+
+        lines.append("")
+        lines.append("Hạng từng số trong bảng tổng hợp và trong các phương pháp:")
+        for value in target_values:
+            combined_rank = combined_positions.get(value)
+            rank_label = str(combined_rank) if combined_rank is not None else ">45"
+            top7_count = 0
+            top15_count = 0
+            best_method_rank = 999
+            best_method_label = "-"
+            for method, ranked_values in method_rank_cache:
+                if value in ranked_values[:7]:
+                    top7_count += 1
+                if value in ranked_values[:15]:
+                    top15_count += 1
+                if value in ranked_values:
+                    current_rank = ranked_values.index(value) + 1
+                    if current_rank < best_method_rank:
+                        best_method_rank = current_rank
+                        best_method_label = method.label
+            method_rank_label = str(best_method_rank) if best_method_rank < 999 else ">45"
+            lines.append(
+                f"{value:02d}: hạng tổng hợp {rank_label}; "
+                f"xuất hiện Top7 ở {top7_count} phương pháp; Top15 ở {top15_count} phương pháp; "
+                f"hạng tốt nhất trong 1 phương pháp: {method_rank_label} ({best_method_label})"
+            )
+
+        best_fit = max((method.fit_match_count for method in self.learned_methods), default=0)
+        if best_fit < MIN_SAVE_FIT_COUNT:
+            lines.extend(
+                [
+                    "",
+                    f"KHUYẾN NGHỊ: Fit tốt nhất chỉ {best_fit}/6 nên KHÔNG NÊN LƯU bộ phương pháp này.",
+                    "Điều này thường có nghĩa là dãy vừa nhập không có dấu vết lịch sử đủ rõ trong dữ liệu hiện tại.",
+                ]
+            )
+        return lines
+
     def format_preview_result(
         self,
         *,
@@ -493,6 +574,7 @@ class TargetLearningWindow(QWidget):
         total_before: int,
         pending_date: str,
         next_after: str,
+        draws_for_diagnostic: list[Draw],
     ) -> str:
         best = self.learned_methods[0] if self.learned_methods else None
         lines = [
@@ -511,7 +593,7 @@ class TargetLearningWindow(QWidget):
             lines.extend(
                 [
                     "PHƯƠNG PHÁP KHỚP TỐT NHẤT TRONG LẦN TÍNH THỬ",
-                    f"Loại: {'Tổ hợp' if best.method_type == 'ensemble' else 'Đơn lẻ'}",
+                    f"Loại: {best.type_label}",
                     f"Cách tính: {best.label}",
                     f"Top fit dãy vừa nhập: {best.fit_signal_label}",
                     f"Số trùng: {best.fit_match_count}/6",
@@ -519,12 +601,16 @@ class TargetLearningWindow(QWidget):
                     "",
                 ]
             )
+        diagnostic = self.diagnostic_lines(draws_for_diagnostic, target_values)
+        if diagnostic:
+            lines.extend(diagnostic)
+            lines.append("")
         lines.extend(
             [
                 "TOP TÍN HIỆU THAM CHIẾU KỲ TIẾP THEO NẾU BẠN LƯU DÃY NÀY",
                 self.format_values(self.next_signal_values),
                 "",
-                "Nếu chưa hài lòng, hãy tăng số phương pháp cần tìm, tăng tổ hợp từ top, tăng support/lag hoặc bấm lại 'Tính thử / Tính lại'. Chỉ bấm lưu khi bạn muốn đưa dãy này vào lịch sử.",
+                "Nếu Target Diagnostic vẫn thấp ở Top 20/30, việc tăng số phương pháp thường không cải thiện nhiều. Chỉ bấm lưu khi fit tối thiểu đạt 3/6 trở lên.",
             ]
         )
         return "\n".join(lines)
@@ -561,7 +647,7 @@ class TargetLearningWindow(QWidget):
             lines.extend(
                 [
                     "PHƯƠNG PHÁP KHỚP TỐT NHẤT",
-                    f"Loại: {'Tổ hợp' if best.method_type == 'ensemble' else 'Đơn lẻ'}",
+                    f"Loại: {best.type_label}",
                     f"Cách tính: {best.label}",
                     f"Top fit dãy vừa nhập: {best.fit_signal_label}",
                     f"Số trùng: {best.fit_match_count}/6",

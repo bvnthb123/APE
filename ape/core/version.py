@@ -2,6 +2,6 @@
 
 APP_NAME = "Adaptive Prediction Engine"
 APP_CODE = "APE"
-VERSION = "2.2.4"
-BUILD_NAME = "Clean Holdout Forecast Test"
+VERSION = "2.2.5"
+BUILD_NAME = "Forecast Test Argument Fix"
 AUTHOR = "Nguyen Thanh Chung + ChatGPT"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 import sys
 from datetime import date
 
@@ -39,6 +40,7 @@ from ape.patterns.target_learning import (
 )
 
 MIN_SAVE_FIT_COUNT = 3
+
 
 TARGET_LEARNING_STYLESHEET = """
 QWidget {
@@ -125,7 +127,8 @@ class TargetLearningWindow(QWidget):
         self.pending_target_values: tuple[int, ...] | None = None
         self.pending_draw_date: date | None = None
         self.pending_draws_for_next: list[Draw] = []
-        self.pending_base_draws: list[Draw] = []
+        self.pending_target_already_in_history = False
+        self.pending_mode_label = ""
 
         self.setWindowTitle(f"APE v{VERSION} - Học từ dãy số mới")
         self.resize(1240, 760)
@@ -143,10 +146,10 @@ class TargetLearningWindow(QWidget):
         header.setObjectName("HeaderFrame")
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(18, 14, 18, 14)
-        title = QLabel("Học từ dãy số mới & tính kỳ tiếp theo")
+        title = QLabel("Học từ dãy số mới & kiểm định kỳ đã có")
         title.setObjectName("HeaderTitle")
         subtitle = QLabel(
-            f"Phiên bản {VERSION} · {BUILD_NAME} · Nhập 1 dãy số để tool fit phương pháp"
+            f"Phiên bản {VERSION} · {BUILD_NAME} · Fit phương pháp bằng dữ liệu lịch sử"
         )
         subtitle.setObjectName("HeaderSubtitle")
         header_layout.addWidget(title)
@@ -154,9 +157,10 @@ class TargetLearningWindow(QWidget):
         layout.addWidget(header)
 
         note = QLabel(
-            "Bước 1: bấm 'Tính thử / Tính lại' để APE thử nhiều phương pháp đơn lẻ và tổ hợp. "
-            "Bước này chỉ tính thử, không ghi database. Khi thật sự hài lòng, bấm 'Lưu phương pháp & cập nhật dãy' để đưa dãy vừa nhập vào lịch sử. "
-            "Nếu fit thấp, APE sẽ hiển thị Target Diagnostic và chặn lưu phương pháp yếu."
+            "Nếu dãy nhập chưa có trong database, APE sẽ tính thử như một kỳ mới và chưa ghi database. "
+            "Nếu dãy nhập đã nằm trong file/database, APE sẽ tự chuyển sang chế độ kiểm định lịch sử: "
+            "chỉ dùng dữ liệu trước kỳ đó để fit, rồi so lại với đúng kỳ đó. "
+            "Cách này tránh việc đánh giá sai sau khi bạn đã cập nhật file số mới."
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: #5E7184; font-style: italic;")
@@ -171,7 +175,7 @@ class TargetLearningWindow(QWidget):
         layout.addWidget(self.data_status_label)
 
         input_row = QHBoxLayout()
-        input_row.addWidget(QLabel("Dãy số kỳ mới"))
+        input_row.addWidget(QLabel("Dãy số cần kiểm định / kỳ mới"))
         self.target_input = QLineEdit()
         self.target_input.setPlaceholderText("Ví dụ: 03 11 18 24 36 42")
         input_row.addWidget(self.target_input, 1)
@@ -188,7 +192,7 @@ class TargetLearningWindow(QWidget):
         self.lag_spin.setValue(12)
         input_row.addWidget(self.lag_spin)
 
-        self.preview_button = QPushButton("Tính thử / Tính lại")
+        self.preview_button = QPushButton("Tính thử / Kiểm định lại")
         self.preview_button.clicked.connect(self.preview_from_target)
         input_row.addWidget(self.preview_button)
 
@@ -224,7 +228,7 @@ class TargetLearningWindow(QWidget):
         self.support_max_spin.setValue(5)
         search_row.addWidget(self.support_max_spin)
 
-        hint = QLabel("Gợi ý: tăng số phương pháp không luôn làm fit tốt hơn; xem Target Diagnostic nếu fit vẫn thấp.")
+        hint = QLabel("Gợi ý: 80/30/5 là cân bằng. 150/50/7 sẽ rà sâu hơn nhưng chậm hơn.")
         hint.setStyleSheet("color: #5E7184;")
         search_row.addWidget(hint, 1)
         layout.addLayout(search_row)
@@ -249,7 +253,7 @@ class TargetLearningWindow(QWidget):
 
         self.result_text = QPlainTextEdit()
         self.result_text.setReadOnly(True)
-        self.result_text.setPlaceholderText("Kết quả tính thử và Target Diagnostic sẽ hiển thị tại đây.")
+        self.result_text.setPlaceholderText("Kết quả tính thử, kiểm định và diagnostic sẽ hiển thị tại đây.")
         layout.addWidget(self.result_text, 1)
 
     def load_draws(self) -> list[Draw]:
@@ -274,15 +278,25 @@ class TargetLearningWindow(QWidget):
             return
         self.data_status_label.setText(
             f"Dữ liệu hiện tại: {total} kỳ · từ {first} đến {latest} · "
-            f"dãy mới bạn nhập sẽ được lưu là kỳ tiếp theo: {next_date}"
+            f"nếu nhập dãy chưa có, dãy đó sẽ được xem là kỳ tiếp theo: {next_date}"
         )
 
+    @staticmethod
+    def numbers_tuple(draw: Draw) -> tuple[int, ...]:
+        return tuple(int(value) for value in draw.numbers)
+
+    def find_existing_target_index(self, draws: list[Draw], target_values: tuple[int, ...]) -> int | None:
+        for index in range(len(draws) - 1, -1, -1):
+            if self.numbers_tuple(draws[index]) == target_values:
+                return index
+        return None
+
     def preview_from_target(self) -> None:
-        """Fit methods against the typed row without saving anything."""
+        """Fit methods against a typed row without saving anything."""
         try:
             target_values = parse_target_numbers(self.target_input.text())
-            draws_before = self.load_draws()
-            if len(draws_before) < 30:
+            all_draws = self.load_draws()
+            if len(all_draws) < 30:
                 QMessageBox.information(
                     self,
                     "Chưa đủ dữ liệu",
@@ -301,12 +315,35 @@ class TargetLearningWindow(QWidget):
             )
             QApplication.processEvents()
 
-            auto_date = next_auto_draw_date(draws_before)
-            hypothetical_draw = build_target_draw(auto_date, target_values)
-            hypothetical_draws = list(draws_before) + [hypothetical_draw]
+            existing_index = self.find_existing_target_index(all_draws, target_values)
+            if existing_index is not None:
+                target_draw = all_draws[existing_index]
+                train_draws = all_draws[:existing_index]
+                draws_for_next = all_draws[: existing_index + 1]
+                auto_date = target_draw.draw_date
+                mode_label = (
+                    "KIỂM ĐỊNH LỊCH SỬ - dãy này đã có trong database, "
+                    "APE chỉ dùng dữ liệu trước kỳ này để fit."
+                )
+                already_in_history = True
+            else:
+                train_draws = all_draws
+                auto_date = next_auto_draw_date(all_draws)
+                target_draw = build_target_draw(auto_date, target_values)
+                draws_for_next = list(all_draws) + [target_draw]
+                mode_label = "TÍNH THỬ KỲ MỚI - dãy này chưa có trong database, chưa ghi dữ liệu."
+                already_in_history = False
+
+            if len(train_draws) < 30:
+                QMessageBox.information(
+                    self,
+                    "Chưa đủ dữ liệu trước kỳ kiểm định",
+                    "Kỳ này nằm quá sớm trong lịch sử nên chưa đủ khoảng 30 kỳ trước đó để kiểm định đúng.",
+                )
+                return
 
             self.learned_methods = self.engine.learn_methods(
-                draws_before,
+                train_draws,
                 target_values,
                 top_k=self.top_spin.value(),
                 max_lag=self.lag_spin.value(),
@@ -319,7 +356,8 @@ class TargetLearningWindow(QWidget):
                 self.pending_target_values = None
                 self.pending_draw_date = None
                 self.pending_draws_for_next = []
-                self.pending_base_draws = []
+                self.pending_target_already_in_history = False
+                self.pending_mode_label = ""
                 QMessageBox.information(
                     self,
                     "Chưa tìm được phương pháp",
@@ -329,17 +367,18 @@ class TargetLearningWindow(QWidget):
 
             self.pending_target_values = target_values
             self.pending_draw_date = auto_date
-            self.pending_draws_for_next = hypothetical_draws
-            self.pending_base_draws = draws_before
+            self.pending_draws_for_next = list(draws_for_next)
+            self.pending_target_already_in_history = already_in_history
+            self.pending_mode_label = mode_label
             self.next_signal_values = self.engine.combined_signal_values(
-                hypothetical_draws,
+                draws_for_next,
                 self.learned_methods,
                 top_k=self.top_spin.value(),
             )
 
-            self.fill_table(hypothetical_draws)
+            self.fill_table(draws_for_next)
             self.commit_button.setEnabled(True)
-            first, latest, total, _next_date_label = self.data_status(draws_before)
+            first, latest, total, _next_date_label = self.data_status(train_draws)
             self.result_text.setPlainText(
                 self.format_preview_result(
                     target_values=target_values,
@@ -347,8 +386,10 @@ class TargetLearningWindow(QWidget):
                     latest_before=latest,
                     total_before=total,
                     pending_date=auto_date.strftime("%d/%m/%Y"),
-                    next_after=next_auto_draw_date(hypothetical_draws).strftime("%d/%m/%Y"),
-                    draws_for_diagnostic=draws_before,
+                    next_after=next_auto_draw_date(draws_for_next).strftime("%d/%m/%Y"),
+                    draws_for_diagnostic=train_draws,
+                    mode_label=mode_label,
+                    already_in_history=already_in_history,
                 )
             )
         except Exception as exc:
@@ -362,7 +403,7 @@ class TargetLearningWindow(QWidget):
             QMessageBox.information(
                 self,
                 "Chưa có kết quả tính thử",
-                "Hãy bấm 'Tính thử / Tính lại' trước, sau đó mới lưu.",
+                "Hãy bấm 'Tính thử / Kiểm định lại' trước, sau đó mới lưu.",
             )
             return
 
@@ -379,13 +420,15 @@ class TargetLearningWindow(QWidget):
             )
             return
 
+        confirm_text = (
+            "Bạn có chắc muốn lưu bộ phương pháp này không?\n\n"
+            "Nếu dãy đã có trong database, APE chỉ lưu phương pháp và KHÔNG thêm dòng dữ liệu mới.\n"
+            "Nếu dãy chưa có, APE sẽ lưu phương pháp và cập nhật dãy vào lịch sử."
+        )
         answer = QMessageBox.question(
             self,
             "Xác nhận lưu",
-            (
-                "Bạn có chắc muốn lưu bộ phương pháp này và cập nhật dãy vừa nhập vào dữ liệu lịch sử không?\n\n"
-                "Nếu chưa hài lòng, hãy bấm 'Tính thử / Tính lại' thay vì lưu."
-            ),
+            confirm_text,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -398,18 +441,23 @@ class TargetLearningWindow(QWidget):
             target_values = self.pending_target_values
             stored_date = self.pending_draw_date
 
-            already_latest = bool(draws_before) and tuple(draws_before[-1].numbers) == target_values
             saved_path = self.store.save(self.learned_methods)
             created = False
+            already_latest = False
+            already_in_history = self.pending_target_already_in_history
 
-            if already_latest:
+            if already_in_history:
                 draws_after = draws_before
-                stored_date = draws_before[-1].draw_date
             else:
-                draw = build_target_draw(stored_date, target_values)
-                with self.database.session() as session:
-                    _, created = DrawRepository(session).upsert(draw)
-                draws_after = self.load_draws()
+                already_latest = bool(draws_before) and self.numbers_tuple(draws_before[-1]) == target_values
+                if already_latest:
+                    draws_after = draws_before
+                    stored_date = draws_before[-1].draw_date
+                else:
+                    draw = build_target_draw(stored_date, target_values)
+                    with self.database.session() as session:
+                        _, created = DrawRepository(session).upsert(draw)
+                    draws_after = self.load_draws()
 
             _methods, self.next_signal_values = learned_method_signal_values(
                 draws_after,
@@ -432,6 +480,7 @@ class TargetLearningWindow(QWidget):
                     stored_date=stored_date.strftime("%d/%m/%Y"),
                     created=created,
                     already_latest=already_latest,
+                    already_in_history=already_in_history,
                     latest_after=latest_after,
                     total_after=total_after,
                     next_after=next_after,
@@ -518,50 +567,50 @@ class TargetLearningWindow(QWidget):
 
         lines = [
             "TARGET DIAGNOSTIC",
-            "Mục tiêu: xác định dãy này có tín hiệu lịch sử đủ mạnh hay không.",
+            "-" * 58,
         ]
         for depth in depths:
             values = set(combined[:depth])
-            hit_values = tuple(sorted(values & target_set))
+            matched = tuple(sorted(values & target_set))
             lines.append(
-                f"Top {depth:02d}: khớp {len(hit_values)}/6"
-                + (f" · {self.format_values(hit_values)}" if hit_values else "")
+                f"Top {depth:02d}: khớp {len(matched)}/6"
+                + (f" · {self.format_values(matched)}" if matched else "")
             )
 
         lines.append("")
-        lines.append("Hạng từng số trong bảng tổng hợp và trong các phương pháp:")
+        lines.append("Vị trí từng số trong bảng xếp hạng tổng hợp Top 45:")
         for value in target_values:
-            combined_rank = combined_positions.get(value)
-            rank_label = str(combined_rank) if combined_rank is not None else ">45"
-            top7_count = 0
-            top15_count = 0
-            best_method_rank = 999
-            best_method_label = "-"
-            for method, ranked_values in method_rank_cache:
-                if value in ranked_values[:7]:
-                    top7_count += 1
-                if value in ranked_values[:15]:
-                    top15_count += 1
-                if value in ranked_values:
-                    current_rank = ranked_values.index(value) + 1
-                    if current_rank < best_method_rank:
-                        best_method_rank = current_rank
-                        best_method_label = method.label
-            method_rank_label = str(best_method_rank) if best_method_rank < 999 else ">45"
+            position = combined_positions.get(value)
+            label = f"hạng {position}" if position is not None else "ngoài Top 45"
+            lines.append(f"- {value:02d}: {label}")
+
+        lines.append("")
+        lines.append("Số phương pháp có kéo từng số vào Top 7 / Top 15 / Top 30:")
+        for value in target_values:
+            counts = Counter()
+            for _method, method_values in method_rank_cache:
+                if value in method_values[:7]:
+                    counts[7] += 1
+                if value in method_values[:15]:
+                    counts[15] += 1
+                if value in method_values[:30]:
+                    counts[30] += 1
             lines.append(
-                f"{value:02d}: hạng tổng hợp {rank_label}; "
-                f"xuất hiện Top7 ở {top7_count} phương pháp; Top15 ở {top15_count} phương pháp; "
-                f"hạng tốt nhất trong 1 phương pháp: {method_rank_label} ({best_method_label})"
+                f"- {value:02d}: Top7={counts[7]} phương pháp · "
+                f"Top15={counts[15]} · Top30={counts[30]}"
             )
 
         best_fit = max((method.fit_match_count for method in self.learned_methods), default=0)
+        lines.append("")
         if best_fit < MIN_SAVE_FIT_COUNT:
-            lines.extend(
-                [
-                    "",
-                    f"KHUYẾN NGHỊ: Fit tốt nhất chỉ {best_fit}/6 nên KHÔNG NÊN LƯU bộ phương pháp này.",
-                    "Điều này thường có nghĩa là dãy vừa nhập không có dấu vết lịch sử đủ rõ trong dữ liệu hiện tại.",
-                ]
+            lines.append(
+                f"KẾT LUẬN: Best fit chỉ {best_fit}/6, dưới ngưỡng lưu an toàn {MIN_SAVE_FIT_COUNT}/6. "
+                "Không nên lưu bộ phương pháp này."
+            )
+        else:
+            lines.append(
+                f"KẾT LUẬN: Best fit {best_fit}/6 đạt ngưỡng lưu tối thiểu. "
+                "Vẫn cần xem đây là tín hiệu thống kê, không phải bảo đảm cho kỳ sau."
             )
         return lines
 
@@ -575,20 +624,32 @@ class TargetLearningWindow(QWidget):
         pending_date: str,
         next_after: str,
         draws_for_diagnostic: list[Draw],
+        mode_label: str,
+        already_in_history: bool,
     ) -> str:
         best = self.learned_methods[0] if self.learned_methods else None
         lines = [
-            "================ TÍNH THỬ - CHƯA LƯU ================",
-            f"Dữ liệu hiện tại: {total_before} kỳ · từ {first_before} đến {latest_before}",
-            f"Dãy số đang fit thử: {self.format_values(target_values)}",
+            "================ TÍNH THỬ / KIỂM ĐỊNH - CHƯA LƯU ================",
+            f"Chế độ: {mode_label}",
+            f"Vùng dữ liệu dùng để fit: {total_before} kỳ · từ {first_before} đến {latest_before}",
+            f"Dãy số đang kiểm định: {self.format_values(target_values)}",
             f"Số phương pháp đã tìm thấy: {len(self.learned_methods)}",
             f"Thiết lập rà: Top {self.top_spin.value()} · Lag tối đa {self.lag_spin.value()} · "
             f"Support 1→{self.support_max_spin.value()} · Tổ hợp từ top {self.ensemble_pool_spin.value()}",
-            f"Nếu lưu, dãy này sẽ được ghi là kỳ: {pending_date}",
-            f"Kỳ tiếp theo tham chiếu sau khi lưu sẽ là: {next_after}",
+            f"Ngày của dãy kiểm định: {pending_date}",
+            f"Kỳ tiếp theo tham chiếu sau dãy này: {next_after}",
             "Trạng thái: CHƯA ghi database, CHƯA thay đổi dữ liệu lịch sử.",
             "",
         ]
+        if already_in_history:
+            lines.extend(
+                [
+                    "LƯU Ý QUAN TRỌNG",
+                    "Dãy này đã có trong database nên APE đang kiểm định đúng kiểu holdout: chỉ dùng dữ liệu trước kỳ đó để fit.",
+                    "Nếu kết quả vẫn 0/6, nghĩa là trước kỳ đó các nhóm phương pháp hiện tại không tạo được tín hiệu cho dãy này.",
+                    "",
+                ]
+            )
         if best is not None:
             lines.extend(
                 [
@@ -601,16 +662,14 @@ class TargetLearningWindow(QWidget):
                     "",
                 ]
             )
-        diagnostic = self.diagnostic_lines(draws_for_diagnostic, target_values)
-        if diagnostic:
-            lines.extend(diagnostic)
-            lines.append("")
+        lines.extend(self.diagnostic_lines(draws_for_diagnostic, target_values))
         lines.extend(
             [
-                "TOP TÍN HIỆU THAM CHIẾU KỲ TIẾP THEO NẾU BẠN LƯU DÃY NÀY",
+                "",
+                "TOP TÍN HIỆU THAM CHIẾU KỲ TIẾP THEO SAU DÃY NÀY",
                 self.format_values(self.next_signal_values),
                 "",
-                "Nếu Target Diagnostic vẫn thấp ở Top 20/30, việc tăng số phương pháp thường không cải thiện nhiều. Chỉ bấm lưu khi fit tối thiểu đạt 3/6 trở lên.",
+                "Nếu Target Diagnostic cho thấy các số nằm ngoài Top 30/45, không nên ép lưu. Đây là tín hiệu lịch sử không đủ mạnh, không phải lỗi do thiếu số lượng phương pháp.",
             ]
         )
         return "\n".join(lines)
@@ -626,17 +685,23 @@ class TargetLearningWindow(QWidget):
         stored_date: str,
         created: bool,
         already_latest: bool,
+        already_in_history: bool,
         latest_after: str,
         total_after: int,
         next_after: str,
     ) -> str:
         best = self.learned_methods[0] if self.learned_methods else None
-        save_note = "không lưu lặp vì dãy này đã là kỳ mới nhất" if already_latest else ("thêm mới" if created else "cập nhật")
+        if already_in_history:
+            save_note = "dãy đã có trong database, chỉ lưu phương pháp"
+        elif already_latest:
+            save_note = "không lưu lặp vì dãy này đã là kỳ mới nhất"
+        else:
+            save_note = "thêm mới" if created else "cập nhật"
         lines = [
             "================ ĐÃ LƯU TARGET LEARNING ================",
             f"Dữ liệu trước khi lưu: {total_before} kỳ · từ {first_before} đến {latest_before}",
             f"Dãy số đã nhập: {self.format_values(target_values)}",
-            f"Ngày lưu vào lịch sử: {stored_date} ({save_note})",
+            f"Ngày của dãy: {stored_date} ({save_note})",
             f"Dữ liệu sau khi lưu: {total_after} kỳ · cập nhật đến {latest_after}",
             f"Kỳ tiếp theo tham chiếu: {next_after}",
             f"Số phương pháp đã lưu: {len(self.learned_methods)}",

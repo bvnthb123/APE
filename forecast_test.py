@@ -18,12 +18,12 @@ def build_parser() -> argparse.ArgumentParser:
         prog="forecast_test.py",
         description="Clean holdout forecast test: choose strategy from history only, then compare with a hidden target row.",
     )
-    parser.add_argument("target", help="Dãy kiểm định, ví dụ: \"06 15 18 33 40 43\"")
+    parser.add_argument("target_row", help="Dãy kiểm định, ví dụ: \"06 15 18 33 40 43\"")
     parser.add_argument("--top", type=int, default=7, help="Top tín hiệu chính, mặc định 7.")
     parser.add_argument("--lag", type=int, default=1, help="Độ trễ dự báo, mặc định N+1.")
     parser.add_argument("--support", type=int, default=3, help="Support tối thiểu gốc.")
     parser.add_argument("--training-rows", type=int, default=60, help="Số kỳ đầu dùng làm vùng học backtest.")
-    parser.add_argument("--target", type=int, default=1, help="Mốc tối ưu trong backtest, mặc định ≥1 số.")
+    parser.add_argument("--target-hit", type=int, default=1, help="Mốc tối ưu trong backtest, mặc định ≥1 số.")
     parser.add_argument("--mode", choices=("quick", "full"), default="full", help="Chế độ rà strategy.")
     parser.add_argument("--max-history", type=int, default=0, help="Số kỳ gần nhất dùng để tối ưu; 0 nghĩa là toàn bộ.")
     return parser
@@ -42,12 +42,12 @@ def main() -> int:
 
     result = HoldoutForecaster().forecast(
         draws,
-        args.target,
+        args.target_row,
         top_k=args.top,
         lag=args.lag,
         base_min_support=args.support,
         min_training_rows=args.training_rows,
-        target_hits=args.target,
+        target_hits=args.target_hit,
         strategy_mode=args.mode,
         max_history_rows=normalized_history_limit(args.max_history),
     )

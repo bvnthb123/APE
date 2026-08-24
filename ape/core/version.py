@@ -2,6 +2,6 @@
 
 APP_NAME = "Adaptive Prediction Engine"
 APP_CODE = "APE"
-VERSION = "2.2.2"
-BUILD_NAME = "Target Diagnostic Gate"
+VERSION = "2.2.3"
+BUILD_NAME = "Historical Holdout Preview"
 AUTHOR = "Nguyen Thanh Chung + ChatGPT"

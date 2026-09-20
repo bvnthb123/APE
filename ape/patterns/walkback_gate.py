@@ -2,8 +2,13 @@
 
 The gate works on the latest N historical rows. It first fits methods on the
 first holdout row, then only keeps methods that continue to produce correct
-numbers in the next holdout rows. A future signal is released only when every
+umbers in the next holdout rows. A future signal is released only when every
 holdout row passes the per-number survivor gate.
+
+When a later holdout row fails, the repair loop can learn additional methods for
+the missing numbers from that failed row, merge them into the candidate pool,
+and restart validation from the first holdout row. This matches the intended
+"fail, go back to period 1, recalculate" workflow.
 
 This is a validation and method-selection workflow. It is intentionally strict
 and may fail when the historical data does not contain a stable signal.
@@ -96,6 +101,8 @@ class WalkbackGateResult:
     holdout_count: int
     top_k: int
     min_ways: int
+    repair_rounds: int
+    repair_used: int
     base_history_rows: int
     steps: tuple[WalkbackStepResult, ...]
     final_signal_values: tuple[int, ...]
@@ -115,8 +122,14 @@ class WalkbackGateResult:
     def total_coverage(self) -> int:
         return sum(step.coverage_count for step in self.steps)
 
-    def sort_key(self) -> tuple[int, int, int, int]:
-        return (self.passed_steps, self.total_coverage, self.total_hits, self.survivor_count)
+    def sort_key(self) -> tuple[int, int, int, int, int]:
+        return (
+            self.passed_steps,
+            self.total_coverage,
+            self.total_hits,
+            self.repair_used * -1,
+            self.survivor_count,
+        )
 
     def to_lines(self) -> list[str]:
         title = "PASS - ĐỦ GATE WALK-BACK" if self.passed else "FAIL - CHƯA ĐỦ GATE WALK-BACK"
@@ -127,6 +140,7 @@ class WalkbackGateResult:
             f"Số kỳ holdout  : {self.holdout_count}",
             f"Top tín hiệu   : {self.top_k}",
             f"Ngưỡng cách/số : {self.min_ways}",
+            f"Repair đã dùng : {self.repair_used}/{self.repair_rounds}",
             f"Vùng học gốc   : {self.base_history_rows} kỳ",
             f"Kỳ đã pass     : {self.passed_steps}/{self.holdout_count}",
             f"Tổng trùng Top : {self.total_hits}/{self.holdout_count * 6}",
@@ -157,6 +171,18 @@ class WalkbackGateResult:
         return lines
 
 
+@dataclass(slots=True, frozen=True)
+class WalkbackEvaluation:
+    """Internal evaluation result for one candidate method pool."""
+
+    result: WalkbackGateResult
+    survivors: list[LearnedMethod]
+    fail_index: int | None
+    fail_history: tuple[Draw, ...]
+    fail_missing_values: tuple[int, ...]
+    fail_target_values: tuple[int, ...]
+
+
 class WalkbackGateTrainer:
     """Walk-back trainer that releases signals after all holdout rows pass."""
 
@@ -176,6 +202,7 @@ class WalkbackGateTrainer:
         max_rounds: int = 3,
         min_base_history: int = 60,
         min_ways: int = 1,
+        repair_rounds: int = 3,
         save_path: Path | None = None,
     ) -> WalkbackGateResult:
         source_draws = list(draws)
@@ -185,6 +212,8 @@ class WalkbackGateTrainer:
             raise ValueError("top_k must be at least 6 because each target row has 6 numbers")
         if min_ways < 1:
             raise ValueError("min_ways must be at least 1")
+        if repair_rounds < 0:
+            raise ValueError("repair_rounds must be at least 0")
         if len(source_draws) <= holdout_count + min_base_history:
             raise ValueError(
                 f"Cần ít nhất {holdout_count + min_base_history + 1} kỳ để walk-back đúng. "
@@ -206,6 +235,7 @@ class WalkbackGateTrainer:
                 top_k=top_k,
                 min_base_history=min_base_history,
                 min_ways=min_ways,
+                repair_rounds=repair_rounds,
                 save_path=save_path,
             )
             if result.passed:
@@ -220,6 +250,8 @@ class WalkbackGateTrainer:
                     holdout_count=result.holdout_count,
                     top_k=result.top_k,
                     min_ways=result.min_ways,
+                    repair_rounds=result.repair_rounds,
+                    repair_used=result.repair_used,
                     base_history_rows=result.base_history_rows,
                     steps=result.steps,
                     final_signal_values=result.final_signal_values,
@@ -242,6 +274,7 @@ class WalkbackGateTrainer:
         top_k: int,
         min_base_history: int,
         min_ways: int,
+        repair_rounds: int,
         save_path: Path | None,
     ) -> tuple[WalkbackGateResult, list[LearnedMethod]]:
         base_history = draws[:-holdout_count]
@@ -250,7 +283,7 @@ class WalkbackGateTrainer:
             raise ValueError("Không đủ dữ liệu trước vùng holdout để huấn luyện.")
 
         first_target = self.draw_values(holdouts[0])
-        survivors = self.engine.learn_methods(
+        method_pool = self.engine.learn_methods(
             base_history,
             first_target,
             top_k=top_k,
@@ -260,11 +293,85 @@ class WalkbackGateTrainer:
             limit=attempt.method_count,
             ensemble_pool=attempt.ensemble_pool,
         )
-        survivors = self.dedupe_methods(survivors)
+        method_pool = self.dedupe_methods(method_pool)
 
+        best_evaluation: WalkbackEvaluation | None = None
+        used_repair_rounds = 0
+        for repair_index in range(0, repair_rounds + 1):
+            evaluation = self.evaluate_method_pool(
+                draws,
+                base_history=base_history,
+                holdouts=holdouts,
+                method_pool=method_pool,
+                attempt=attempt,
+                holdout_count=holdout_count,
+                top_k=top_k,
+                min_ways=min_ways,
+                repair_rounds=repair_rounds,
+                repair_used=repair_index,
+                save_path=save_path,
+            )
+            if best_evaluation is None or evaluation.result.sort_key() > best_evaluation.result.sort_key():
+                best_evaluation = evaluation
+
+            if evaluation.result.passed:
+                return evaluation.result, evaluation.survivors
+
+            if repair_index >= repair_rounds:
+                break
+            if not evaluation.fail_missing_values:
+                break
+
+            repair_methods = self.learn_repair_methods(
+                evaluation.fail_history,
+                evaluation.fail_missing_values,
+                attempt=attempt,
+                top_k=top_k,
+            )
+            before_count = len(method_pool)
+            method_pool = self.dedupe_methods([*method_pool, *repair_methods])
+            used_repair_rounds = repair_index + 1
+            if len(method_pool) <= before_count:
+                break
+
+        assert best_evaluation is not None
+        result = best_evaluation.result
+        if used_repair_rounds != result.repair_used:
+            result = WalkbackGateResult(
+                passed=result.passed,
+                attempt=result.attempt,
+                holdout_count=result.holdout_count,
+                top_k=result.top_k,
+                min_ways=result.min_ways,
+                repair_rounds=result.repair_rounds,
+                repair_used=max(result.repair_used, used_repair_rounds),
+                base_history_rows=result.base_history_rows,
+                steps=result.steps,
+                final_signal_values=result.final_signal_values,
+                survivor_count=result.survivor_count,
+                saved_path=result.saved_path,
+                fail_reason=result.fail_reason,
+            )
+        return result, best_evaluation.survivors
+
+    def evaluate_method_pool(
+        self,
+        draws: list[Draw],
+        *,
+        base_history: list[Draw],
+        holdouts: list[Draw],
+        method_pool: list[LearnedMethod],
+        attempt: WalkbackAttemptConfig,
+        holdout_count: int,
+        top_k: int,
+        min_ways: int,
+        repair_rounds: int,
+        repair_used: int,
+        save_path: Path | None,
+    ) -> WalkbackEvaluation:
+        survivors = self.dedupe_methods(method_pool)
         steps: list[WalkbackStepResult] = []
         history = list(base_history)
-        fail_reason = ""
 
         for index, target_draw in enumerate(holdouts, 1):
             target = self.draw_values(target_draw)
@@ -303,44 +410,85 @@ class WalkbackGateTrainer:
                 fail_reason = (
                     f"Gate dừng ở kỳ {index:02d} ({target_draw.draw_date.strftime('%d/%m/%Y')}). "
                     f"Thiếu theo ngưỡng cách: {format_values(missing)}. "
-                    f"Đủ cách {len(covered)}/6, trùng Top {len(matched)}/6."
+                    f"Đủ cách {len(covered)}/6, trùng Top {len(matched)}/6. "
+                    f"Đã repair {repair_used}/{repair_rounds} vòng."
                 )
-                return (
-                    WalkbackGateResult(
-                        passed=False,
-                        attempt=attempt,
-                        holdout_count=holdout_count,
-                        top_k=top_k,
-                        min_ways=min_ways,
-                        base_history_rows=len(base_history),
-                        steps=tuple(steps),
-                        final_signal_values=tuple(),
-                        survivor_count=len(next_survivors),
-                        saved_path=None,
-                        fail_reason=fail_reason,
-                    ),
-                    next_survivors,
+                result = WalkbackGateResult(
+                    passed=False,
+                    attempt=attempt,
+                    holdout_count=holdout_count,
+                    top_k=top_k,
+                    min_ways=min_ways,
+                    repair_rounds=repair_rounds,
+                    repair_used=repair_used,
+                    base_history_rows=len(base_history),
+                    steps=tuple(steps),
+                    final_signal_values=tuple(),
+                    survivor_count=len(next_survivors),
+                    saved_path=None,
+                    fail_reason=fail_reason,
                 )
+                return WalkbackEvaluation(
+                    result=result,
+                    survivors=next_survivors,
+                    fail_index=index,
+                    fail_history=tuple(history),
+                    fail_missing_values=missing,
+                    fail_target_values=target,
+                )
+
             survivors = next_survivors
             history.append(target_draw)
 
         final_signal = self.method_vote_signal_values(draws, survivors, top_k=top_k)
-        return (
-            WalkbackGateResult(
-                passed=True,
-                attempt=attempt,
-                holdout_count=holdout_count,
-                top_k=top_k,
-                min_ways=min_ways,
-                base_history_rows=len(base_history),
-                steps=tuple(steps),
-                final_signal_values=final_signal,
-                survivor_count=len(survivors),
-                saved_path=save_path or SETTINGS.data_dir / "walkback_survivors.json",
-                fail_reason="",
-            ),
-            survivors,
+        result = WalkbackGateResult(
+            passed=True,
+            attempt=attempt,
+            holdout_count=holdout_count,
+            top_k=top_k,
+            min_ways=min_ways,
+            repair_rounds=repair_rounds,
+            repair_used=repair_used,
+            base_history_rows=len(base_history),
+            steps=tuple(steps),
+            final_signal_values=final_signal,
+            survivor_count=len(survivors),
+            saved_path=save_path or SETTINGS.data_dir / "walkback_survivors.json",
+            fail_reason="",
         )
+        return WalkbackEvaluation(
+            result=result,
+            survivors=survivors,
+            fail_index=None,
+            fail_history=tuple(history),
+            fail_missing_values=tuple(),
+            fail_target_values=tuple(),
+        )
+
+    def learn_repair_methods(
+        self,
+        history: Sequence[Draw],
+        missing_values: tuple[int, ...],
+        *,
+        attempt: WalkbackAttemptConfig,
+        top_k: int,
+    ) -> list[LearnedMethod]:
+        """Learn extra methods aimed at the missing values of a failed holdout row."""
+        if not missing_values:
+            return []
+        repair_limit = max(80, min(attempt.method_count, attempt.method_count // 2))
+        repair_pool = max(10, min(attempt.ensemble_pool, 50))
+        methods = self.engine.learn_methods(
+            history,
+            missing_values,
+            top_k=top_k,
+            max_lag=attempt.max_lag,
+            support_values=tuple(range(1, attempt.support_max + 1)),
+            strategy_mode="full",
+            limit=repair_limit,
+            ensemble_pool=repair_pool,
+        )
+        return self.dedupe_methods(methods)
 
     def survivors_that_hit(
         self,
@@ -457,6 +605,8 @@ class WalkbackGateTrainer:
             "holdout_count": result.holdout_count,
             "top_k": result.top_k,
             "min_ways": result.min_ways,
+            "repair_rounds": result.repair_rounds,
+            "repair_used": result.repair_used,
             "base_history_rows": result.base_history_rows,
             "attempt": {
                 "round_index": result.attempt.round_index,

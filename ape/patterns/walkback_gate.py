@@ -2,7 +2,7 @@
 
 The gate works on the latest N historical rows. It first fits methods on the
 first holdout row, then only keeps methods that continue to produce correct
-umbers in the next holdout rows. A future signal is released only when every
+numbers in the next holdout rows. A future signal is released only when every
 holdout row passes the per-number survivor gate.
 
 When a later holdout row fails, the repair loop can learn additional methods for
@@ -79,8 +79,10 @@ class WalkbackStepResult:
             f"Kỳ {self.index:02d} · {self.draw_date.strftime('%d/%m/%Y')} · {status}",
             f"  Dãy đúng          : {format_values(self.target_values)}",
             f"  Tín hiệu xếp hạng : {format_values(self.signal_values)}",
-            f"  Trùng Top         : {self.hit_count}/6" + (f" · {format_values(self.matched_values)}" if self.matched_values else ""),
-            f"  Đủ cách theo số   : {self.coverage_count}/6" + (f" · {format_values(self.covered_values)}" if self.covered_values else ""),
+            f"  Trùng Top         : {self.hit_count}/6"
+            + (f" · {format_values(self.matched_values)}" if self.matched_values else ""),
+            f"  Đủ cách theo số   : {self.coverage_count}/6"
+            + (f" · {format_values(self.covered_values)}" if self.covered_values else ""),
             f"  Thiếu theo cách   : {format_values(self.missing_values) if self.missing_values else '-'}",
             f"  Cách còn sống     : {self.survivor_count_before} → {self.survivor_count_after}",
             "  Số cách kéo từng số:",
@@ -324,6 +326,7 @@ class WalkbackGateTrainer:
 
             repair_methods = self.learn_repair_methods(
                 evaluation.fail_history,
+                evaluation.fail_target_values,
                 evaluation.fail_missing_values,
                 attempt=attempt,
                 top_k=top_k,
@@ -468,19 +471,29 @@ class WalkbackGateTrainer:
     def learn_repair_methods(
         self,
         history: Sequence[Draw],
+        target_values: tuple[int, ...],
         missing_values: tuple[int, ...],
         *,
         attempt: WalkbackAttemptConfig,
         top_k: int,
     ) -> list[LearnedMethod]:
-        """Learn extra methods aimed at the missing values of a failed holdout row."""
+        """Learn extra methods aimed at missing values of a failed holdout row.
+
+        TargetLearningEngine requires a full 6-number target row. Therefore the
+        repair pass learns from the full failed row, then keeps only methods
+        whose current signal can actually pull at least one missing value.
+        """
         if not missing_values:
             return []
+        if len(target_values) != 6:
+            return []
+
+        missing = set(missing_values)
         repair_limit = max(80, min(attempt.method_count, attempt.method_count // 2))
         repair_pool = max(10, min(attempt.ensemble_pool, 50))
         methods = self.engine.learn_methods(
             history,
-            missing_values,
+            target_values,
             top_k=top_k,
             max_lag=attempt.max_lag,
             support_values=tuple(range(1, attempt.support_max + 1)),
@@ -488,7 +501,12 @@ class WalkbackGateTrainer:
             limit=repair_limit,
             ensemble_pool=repair_pool,
         )
-        return self.dedupe_methods(methods)
+        repaired: list[LearnedMethod] = []
+        for method in methods:
+            values = self.engine.signal_values_from_method(history, method, top_k=top_k)
+            if set(values) & missing:
+                repaired.append(method)
+        return self.dedupe_methods(repaired)
 
     def survivors_that_hit(
         self,

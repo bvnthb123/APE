@@ -2,7 +2,7 @@
 
 Example:
     py walkback_train.py
-    py walkback_train.py --holdout 10 --top 6 --method-count 300 --max-rounds 3
+    py walkback_train.py --holdout 10 --top 7 --method-count 600 --min-ways 1
 """
 
 from __future__ import annotations
@@ -19,18 +19,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="walkback_train.py",
         description=(
-            "Lùi lại N kỳ cuối, tìm bộ phương pháp sống sót qua từng kỳ, "
-            "chỉ xuất tín hiệu kỳ mới khi toàn bộ N kỳ đều pass đủ 6 số."
+            "Lùi lại N kỳ cuối, tìm bộ phương pháp sống sót qua từng kỳ. "
+            "Một kỳ pass khi cả 6 số đều có đủ số cách tính sống sót kéo ra."
         ),
     )
     parser.add_argument("--holdout", type=int, default=10, help="Số kỳ cuối dùng làm vùng kiểm định, mặc định 10.")
-    parser.add_argument("--top", type=int, default=6, help="Số tín hiệu cần xuất/so khớp, mặc định 6.")
+    parser.add_argument("--top", type=int, default=6, help="Top mỗi phương pháp dùng để xét, mặc định 6.")
     parser.add_argument("--method-count", type=int, default=200, help="Số phương pháp cần tìm ở vòng đầu, mặc định 200.")
     parser.add_argument("--ensemble-pool", type=int, default=30, help="Số phương pháp đưa vào tổ hợp ở vòng đầu, mặc định 30.")
     parser.add_argument("--max-lag", type=int, default=12, help="Lag tối đa ở vòng đầu, mặc định 12.")
     parser.add_argument("--support-max", type=int, default=5, help="Support rà đến ở vòng đầu, mặc định 5.")
     parser.add_argument("--max-rounds", type=int, default=3, help="Số vòng tự mở rộng nếu gate fail, mặc định 3.")
     parser.add_argument("--min-base-history", type=int, default=60, help="Số kỳ tối thiểu trước vùng holdout, mặc định 60.")
+    parser.add_argument("--min-ways", type=int, default=1, help="Số cách tối thiểu cần kéo ra mỗi số đúng, mặc định 1.")
     parser.add_argument(
         "--save-path",
         default=None,
@@ -56,6 +57,7 @@ def main() -> int:
         support_max=args.support_max,
         max_rounds=args.max_rounds,
         min_base_history=args.min_base_history,
+        min_ways=args.min_ways,
         save_path=Path(args.save_path) if args.save_path else None,
     )
     print("\n".join(result.to_lines()))

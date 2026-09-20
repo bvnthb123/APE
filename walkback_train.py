@@ -2,7 +2,7 @@
 
 Example:
     py walkback_train.py
-    py walkback_train.py --holdout 10 --top 7 --method-count 600 --min-ways 1 --repair-rounds 5
+    py walkback_train.py --holdout 10 --top 7 --way-top 12 --method-count 600 --min-ways 1 --repair-rounds 5
 """
 
 from __future__ import annotations
@@ -25,7 +25,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--holdout", type=int, default=10, help="Số kỳ cuối dùng làm vùng kiểm định, mặc định 10.")
-    parser.add_argument("--top", type=int, default=6, help="Top mỗi phương pháp dùng để xét, mặc định 6.")
+    parser.add_argument("--top", type=int, default=6, help="Top tín hiệu cuối cùng để xếp hạng, mặc định 6.")
+    parser.add_argument(
+        "--way-top",
+        type=int,
+        default=None,
+        help="Phạm vi mỗi phương pháp được xét là kéo ra một số, mặc định bằng --top. Ví dụ: --top 7 --way-top 12.",
+    )
     parser.add_argument("--method-count", type=int, default=200, help="Số phương pháp cần tìm ở vòng đầu, mặc định 200.")
     parser.add_argument("--ensemble-pool", type=int, default=30, help="Số phương pháp đưa vào tổ hợp ở vòng đầu, mặc định 30.")
     parser.add_argument("--max-lag", type=int, default=12, help="Lag tối đa ở vòng đầu, mặc định 12.")
@@ -53,6 +59,7 @@ def main() -> int:
         draws,
         holdout_count=args.holdout,
         top_k=args.top,
+        way_top=args.way_top,
         method_count=args.method_count,
         ensemble_pool=args.ensemble_pool,
         max_lag=args.max_lag,

@@ -2,7 +2,7 @@
 
 Example:
     py walkback_train.py
-    py walkback_train.py --holdout 10 --top 7 --method-count 600 --min-ways 1
+    py walkback_train.py --holdout 10 --top 7 --method-count 600 --min-ways 1 --repair-rounds 5
 """
 
 from __future__ import annotations
@@ -20,7 +20,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="walkback_train.py",
         description=(
             "Lùi lại N kỳ cuối, tìm bộ phương pháp sống sót qua từng kỳ. "
-            "Một kỳ pass khi cả 6 số đều có đủ số cách tính sống sót kéo ra."
+            "Một kỳ pass khi cả 6 số đều có đủ số cách tính sống sót kéo ra. "
+            "Nếu fail, repair loop sẽ học bổ sung số thiếu rồi quay lại kỳ 01."
         ),
     )
     parser.add_argument("--holdout", type=int, default=10, help="Số kỳ cuối dùng làm vùng kiểm định, mặc định 10.")
@@ -32,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-rounds", type=int, default=3, help="Số vòng tự mở rộng nếu gate fail, mặc định 3.")
     parser.add_argument("--min-base-history", type=int, default=60, help="Số kỳ tối thiểu trước vùng holdout, mặc định 60.")
     parser.add_argument("--min-ways", type=int, default=1, help="Số cách tối thiểu cần kéo ra mỗi số đúng, mặc định 1.")
+    parser.add_argument("--repair-rounds", type=int, default=3, help="Số vòng học bổ sung số thiếu rồi chạy lại từ kỳ 01, mặc định 3.")
     parser.add_argument(
         "--save-path",
         default=None,
@@ -58,6 +60,7 @@ def main() -> int:
         max_rounds=args.max_rounds,
         min_base_history=args.min_base_history,
         min_ways=args.min_ways,
+        repair_rounds=args.repair_rounds,
         save_path=Path(args.save_path) if args.save_path else None,
     )
     print("\n".join(result.to_lines()))

@@ -12,7 +12,8 @@ from pathlib import Path
 
 from ape.core.app import APEApplication
 from ape.database.repositories import DrawRepository
-from ape.patterns.walkback_gate import WalkbackGateTrainer
+from ape.patterns.audit import format_values
+from ape.patterns.walkback_gate import WalkbackGateResult, WalkbackGateTrainer
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,6 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-rounds", type=int, default=3, help="Số vòng tự mở rộng nếu gate fail, mặc định 3.")
     parser.add_argument("--min-base-history", type=int, default=60, help="Số kỳ tối thiểu trước vùng holdout, mặc định 60.")
     parser.add_argument("--min-ways", type=int, default=1, help="Số cách tối thiểu cần kéo ra mỗi số đúng, mặc định 1.")
+    parser.add_argument(
+        "--min-top-hits",
+        type=int,
+        default=1,
+        help="Số trùng Top tối thiểu mỗi kỳ walkback cần đạt. Mặc định 1 để tránh xuất tín hiệu khi Top lịch sử từng có kỳ 0/6.",
+    )
     parser.add_argument("--repair-rounds", type=int, default=3, help="Số vòng học bổ sung số thiếu rồi chạy lại từ kỳ 01, mặc định 3.")
     parser.add_argument(
         "--save-path",
@@ -46,6 +53,64 @@ def build_parser() -> argparse.ArgumentParser:
         help="Đường dẫn file JSON để lưu bộ phương pháp sống sót khi gate pass.",
     )
     return parser
+
+
+def remove_saved_file_if_needed(result: WalkbackGateResult) -> None:
+    """Remove a survivor file if final top gate blocks the result."""
+    if not result.saved_path:
+        return
+    try:
+        Path(result.saved_path).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def final_top_gate_lines(result: WalkbackGateResult, min_top_hits: int) -> list[str] | None:
+    """Return blocking lines when per-number gate passed but final Top gate failed."""
+    if not result.passed or min_top_hits <= 0:
+        return None
+
+    weak_steps = [step for step in result.steps if step.hit_count < min_top_hits]
+    if not weak_steps:
+        return None
+
+    first = weak_steps[0]
+    remove_saved_file_if_needed(result)
+    lines = [
+        "================ WALK-BACK 10 KỲ GATE ================",
+        "FAIL - CHƯA ĐỦ FINAL TOP GATE",
+        f"Cấu hình       : {result.attempt.label}",
+        f"Số kỳ holdout  : {result.holdout_count}",
+        f"Top tín hiệu   : {result.top_k}",
+        f"Way Top/cách   : {result.way_top}",
+        f"Ngưỡng cách/số : {result.min_ways}",
+        f"Ngưỡng Top/kỳ  : {min_top_hits}",
+        f"Repair đã dùng : {result.repair_used}/{result.repair_rounds}",
+        f"Vùng học gốc   : {result.base_history_rows} kỳ",
+        f"Kỳ pass cách   : {result.passed_steps}/{result.holdout_count}",
+        f"Tổng trùng Top : {result.total_hits}/{result.holdout_count * 6}",
+        f"Tổng đủ cách   : {result.total_coverage}/{result.holdout_count * 6}",
+        f"Kỳ yếu Top     : {len(weak_steps)} kỳ",
+        "",
+    ]
+    for step in result.steps:
+        lines.extend(step.to_lines())
+        lines.append("-" * 58)
+    lines.extend(
+        [
+            "KẾT LUẬN",
+            (
+                f"Per-number gate đã qua, nhưng Final Top Gate dừng ở kỳ {first.index:02d} "
+                f"({first.draw_date.strftime('%d/%m/%Y')}). Top {result.top_k} chỉ trùng "
+                f"{first.hit_count}/6, thấp hơn ngưỡng {min_top_hits}."
+            ),
+            f"Dãy đúng kỳ yếu: {format_values(first.target_values)}",
+            f"Top tín hiệu kỳ yếu: {format_values(first.signal_values)}",
+            "Không xuất tín hiệu kỳ mới vì Top xếp hạng lịch sử chưa đủ lực kiểm chứng.",
+            "=======================================================",
+        ]
+    )
+    return lines
 
 
 def main() -> int:
@@ -70,7 +135,8 @@ def main() -> int:
         repair_rounds=args.repair_rounds,
         save_path=Path(args.save_path) if args.save_path else None,
     )
-    print("\n".join(result.to_lines()))
+    lines = final_top_gate_lines(result, args.min_top_hits) or result.to_lines()
+    print("\n".join(lines))
     return 0
 
 

@@ -6,6 +6,10 @@ when that method can pull that exact number inside the configured way-top range.
 The surviving methods from one holdout row become the only candidate methods for
 the next holdout row.
 
+The final Top signal is ranked by independent survivor groups, not by one global
+vote pool. This prevents one large method cluster from overwhelming all other
+surviving number chains.
+
 A future signal is released only when every holdout row passes the independent
 number-chain gate and the final Top gate.
 """
@@ -17,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 from pathlib import Path
-from typing import Sequence
+from typing import Iterable, Sequence
 
 from ape.core.settings import SETTINGS
 from ape.database.models import Draw
@@ -270,7 +274,7 @@ class IndependentNumberChainTrainer:
             raise ValueError("Không đủ dữ liệu trước vùng holdout để học chuỗi.")
 
         first_target = self.draw_values(holdouts[0])
-        available_methods = self.engine.learn_methods(
+        initial_methods = self.engine.learn_methods(
             base_history,
             first_target,
             top_k=way_top,
@@ -280,17 +284,22 @@ class IndependentNumberChainTrainer:
             limit=attempt.method_count,
             ensemble_pool=attempt.ensemble_pool,
         )
-        available_methods = self.dedupe_methods(available_methods)
+        initial_methods = self.dedupe_methods(initial_methods)
+        method_groups: dict[int, list[LearnedMethod]] = {-1: initial_methods}
+        available_methods = initial_methods
 
         steps: list[NumberChainStepResult] = []
         history = list(base_history)
 
         for index, target_draw in enumerate(holdouts, 1):
             target = self.draw_values(target_draw)
+            available_methods = self.dedupe_methods(
+                method for methods in method_groups.values() for method in methods
+            )
             method_count_before = len(available_methods)
-            signal_values = self.method_vote_signal_values(
+            signal_values = self.group_balanced_signal_values(
                 history,
-                available_methods,
+                method_groups,
                 top_k=top_k,
                 way_top=way_top,
             )
@@ -310,8 +319,13 @@ class IndependentNumberChainTrainer:
 
             covered = tuple(value for value in target if per_value_counts.get(value, 0) >= min_ways)
             missing = tuple(value for value in target if value not in set(covered))
+            next_groups = {
+                value: value_pools[value]
+                for value in target
+                if per_value_counts.get(value, 0) >= min_ways
+            }
             next_methods = self.dedupe_methods(
-                method for value in target for method in value_pools.get(value, [])
+                method for methods in next_groups.values() for method in methods
             )
             passed = (
                 len(covered) == len(target)
@@ -367,12 +381,13 @@ class IndependentNumberChainTrainer:
                     next_methods,
                 )
 
+            method_groups = next_groups
             available_methods = next_methods
             history.append(target_draw)
 
-        final_signal = self.method_vote_signal_values(
+        final_signal = self.group_balanced_signal_values(
             draws,
-            available_methods,
+            method_groups,
             top_k=top_k,
             way_top=way_top,
         )
@@ -409,6 +424,60 @@ class IndependentNumberChainTrainer:
             if value in set(values):
                 result.append(method)
         return self.dedupe_methods(result)
+
+    def group_balanced_signal_values(
+        self,
+        draws: Sequence[Draw],
+        method_groups: dict[int, list[LearnedMethod]],
+        *,
+        top_k: int,
+        way_top: int,
+    ) -> tuple[int, ...]:
+        """Rank signal values by balanced independent survivor groups.
+
+        Each surviving number group receives a chance to contribute candidates.
+        This avoids a single large group dominating the Top signal.
+        """
+        group_rankings: list[tuple[int, int, tuple[int, ...]]] = []
+        for group_value, methods in method_groups.items():
+            unique_methods = self.dedupe_methods(methods)
+            if not unique_methods:
+                continue
+            ranked_values = self.method_vote_signal_values(
+                draws,
+                unique_methods,
+                top_k=way_top,
+                way_top=way_top,
+            )
+            if ranked_values:
+                group_rankings.append((group_value, len(unique_methods), ranked_values))
+
+        group_rankings.sort(key=lambda item: (item[1], item[0]), reverse=True)
+        selected: list[int] = []
+        seen: set[int] = set()
+        for rank_index in range(way_top):
+            for _, _, ranked_values in group_rankings:
+                if rank_index >= len(ranked_values):
+                    continue
+                value = ranked_values[rank_index]
+                if value in seen:
+                    continue
+                selected.append(value)
+                seen.add(value)
+                if len(selected) >= top_k:
+                    return tuple(selected)
+
+        fallback_methods = self.dedupe_methods(
+            method for methods in method_groups.values() for method in methods
+        )
+        for value in self.method_vote_signal_values(draws, fallback_methods, top_k=top_k, way_top=way_top):
+            if value in seen:
+                continue
+            selected.append(value)
+            seen.add(value)
+            if len(selected) >= top_k:
+                break
+        return tuple(selected[:top_k])
 
     def method_vote_signal_values(
         self,
@@ -476,7 +545,7 @@ class IndependentNumberChainTrainer:
         )
         return (method.method_type, method.label, method.top_k, config_key)
 
-    def dedupe_methods(self, methods: Sequence[LearnedMethod]) -> list[LearnedMethod]:
+    def dedupe_methods(self, methods: Iterable[LearnedMethod]) -> list[LearnedMethod]:
         seen: set[tuple[object, ...]] = set()
         result: list[LearnedMethod] = []
         for method in methods:
@@ -499,6 +568,7 @@ class IndependentNumberChainTrainer:
         payload = {
             "saved_at": datetime.now().isoformat(timespec="seconds"),
             "mode": "independent_number_chain_gate",
+            "ranking": "group_balanced_independent_chain",
             "passed": result.passed,
             "holdout_count": result.holdout_count,
             "top_k": result.top_k,

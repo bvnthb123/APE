@@ -1,8 +1,8 @@
-"""Run the number ranking lab.
+"""Run the number ranking rescue lab.
 
 Example:
     py number_rank_train.py
-    py number_rank_train.py --holdout 15 --top 7 --way-top 20 --method-count 800
+    py number_rank_train.py --holdout 15 --top 7 --way-top 20 --method-count 800 --repair-rounds 5
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ape.core.app import APEApplication
 from ape.database.repositories import DrawRepository
-from ape.patterns.number_rank_gate import NumberRankingLabTrainer, RANKING_MODES
+from ape.patterns.number_rank_rescue_gate import NumberRankingRescueTrainer, RANKING_MODES
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="number_rank_train.py",
         description=(
             "Kiểm tra nhiều kiểu xếp Top 7 trên chuỗi walkback. "
-            "Tool chỉ xuất tín hiệu khi một ranking vượt đủ gate."
+            "Nếu thiếu riêng một số, tool sẽ học rescue số thiếu rồi chạy lại từ kỳ 01."
         ),
     )
     parser.add_argument("--holdout", type=int, default=15, help="Số kỳ cuối dùng làm chuỗi kiểm định, mặc định 15.")
@@ -34,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-base-history", type=int, default=60, help="Số kỳ tối thiểu trước vùng holdout, mặc định 60.")
     parser.add_argument("--min-ways", type=int, default=1, help="Số cách tối thiểu cần kéo ra mỗi số đúng, mặc định 1.")
     parser.add_argument("--min-top-hits", type=int, default=1, help="Số trùng Top tối thiểu mỗi kỳ cần đạt, mặc định 1.")
+    parser.add_argument("--repair-rounds", type=int, default=5, help="Số vòng rescue số thiếu rồi chạy lại từ kỳ 01, mặc định 5.")
     parser.add_argument(
         "--rank-modes",
         default=",".join(RANKING_MODES),
@@ -56,7 +57,7 @@ def main() -> int:
     with app.database.session() as session:
         draws = DrawRepository(session).list_chronological()
 
-    result = NumberRankingLabTrainer().train(
+    result = NumberRankingRescueTrainer().train(
         draws,
         holdout_count=args.holdout,
         top_k=args.top,
@@ -69,6 +70,7 @@ def main() -> int:
         min_base_history=args.min_base_history,
         min_ways=args.min_ways,
         min_top_hits=args.min_top_hits,
+        repair_rounds=args.repair_rounds,
         ranking_modes=rank_modes,
         save_path=Path(args.save_path) if args.save_path else None,
     )

@@ -14,13 +14,16 @@ from ape.core.app import APEApplication
 from ape.database.repositories import DrawRepository
 from ape.patterns.number_rank_rescue_gate import NumberRankingRescueTrainer, RANKING_MODES
 
+DEFAULT_RANK_MODES = ("missing_first", "coverage_balanced")
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="number_rank_train.py",
         description=(
             "Kiểm tra nhiều kiểu xếp Top 7 trên chuỗi walkback. "
-            "Nếu thiếu riêng một số, tool sẽ học rescue số thiếu rồi chạy lại từ kỳ 01."
+            "Nếu thiếu riêng một số, tool sẽ học rescue số thiếu rồi chạy lại từ kỳ 01. "
+            "Mặc định chỉ chạy 2 ranking nhẹ nhất để tránh treo quá lâu."
         ),
     )
     parser.add_argument("--holdout", type=int, default=15, help="Số kỳ cuối dùng làm chuỗi kiểm định, mặc định 15.")
@@ -30,15 +33,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ensemble-pool", type=int, default=70, help="Số phương pháp đưa vào tổ hợp ở vòng đầu, mặc định 70.")
     parser.add_argument("--max-lag", type=int, default=24, help="Lag tối đa ở vòng đầu, mặc định 24.")
     parser.add_argument("--support-max", type=int, default=9, help="Support rà đến ở vòng đầu, mặc định 9.")
-    parser.add_argument("--max-rounds", type=int, default=3, help="Số vòng tự mở rộng, mặc định 3.")
+    parser.add_argument("--max-rounds", type=int, default=1, help="Số vòng tự mở rộng, mặc định 1 để tránh chạy quá lâu.")
     parser.add_argument("--min-base-history", type=int, default=60, help="Số kỳ tối thiểu trước vùng holdout, mặc định 60.")
     parser.add_argument("--min-ways", type=int, default=1, help="Số cách tối thiểu cần kéo ra mỗi số đúng, mặc định 1.")
     parser.add_argument("--min-top-hits", type=int, default=1, help="Số trùng Top tối thiểu mỗi kỳ cần đạt, mặc định 1.")
-    parser.add_argument("--repair-rounds", type=int, default=5, help="Số vòng rescue số thiếu rồi chạy lại từ kỳ 01, mặc định 5.")
+    parser.add_argument("--repair-rounds", type=int, default=2, help="Số vòng rescue số thiếu rồi chạy lại từ kỳ 01, mặc định 2 để tránh chạy quá lâu.")
     parser.add_argument(
         "--rank-modes",
-        default=",".join(RANKING_MODES),
-        help="Danh sách ranking cần thử, cách nhau bởi dấu phẩy.",
+        default=",".join(DEFAULT_RANK_MODES),
+        help=(
+            "Danh sách ranking cần thử, cách nhau bởi dấu phẩy. "
+            f"Mặc định: {','.join(DEFAULT_RANK_MODES)}. "
+            f"Tất cả mode có thể dùng: {','.join(RANKING_MODES)}."
+        ),
     )
     parser.add_argument(
         "--save-path",
@@ -52,11 +59,18 @@ def main() -> int:
     args = build_parser().parse_args()
     rank_modes = tuple(mode.strip() for mode in args.rank_modes.split(",") if mode.strip())
 
+    print("[APE] Number Ranking Rescue Lab")
+    print(f"[APE] holdout={args.holdout}, top={args.top}, way_top={args.way_top}")
+    print(f"[APE] method_count={args.method_count}, ensemble_pool={args.ensemble_pool}, max_lag={args.max_lag}, support_max={args.support_max}")
+    print(f"[APE] max_rounds={args.max_rounds}, repair_rounds={args.repair_rounds}, rank_modes={','.join(rank_modes)}")
+    print("[APE] Nếu muốn dừng: nhấn Ctrl+C. Nếu chạy thử, dùng method-count thấp và max-rounds=1.")
+
     app = APEApplication()
     app.start()
     with app.database.session() as session:
         draws = DrawRepository(session).list_chronological()
 
+    print(f"[APE] Đã nạp {len(draws)} kỳ. Bắt đầu kiểm định ranking/rescue...")
     result = NumberRankingRescueTrainer().train(
         draws,
         holdout_count=args.holdout,

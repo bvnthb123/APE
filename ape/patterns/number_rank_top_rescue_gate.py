@@ -1,13 +1,19 @@
 """Top-hit rescue wrapper for the number ranking rescue lab.
 
 This module keeps the missing-number rescue behavior from number_rank_rescue_gate
-and adds one extra repair path: when all target numbers have independent ways
-but the public Top-N ranking misses the target row, learn extra methods for the
-failed row and prioritize target values that were outside Top-N.
+and adds two extra repair paths:
+
+* Top rescue: when all target numbers have independent ways but the public Top-N
+  ranking misses the target row, learn extra methods for the failed row.
+* Edge rescue: when boundary values such as 01/02/44/45 disappear from the
+  survivor chain, inject explicit low/high edge methods and let the walkback
+  gate decide whether they survive.
 """
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
@@ -22,7 +28,7 @@ from ape.patterns.number_rank_rescue_gate import (
 
 
 class NumberRankingTopRescueTrainer(NumberRankingRescueTrainer):
-    """Ranking rescue trainer with an additional Top-hit rescue path."""
+    """Ranking rescue trainer with Top-hit and boundary-number rescue paths."""
 
     def run_mode_with_rescue(
         self,
@@ -98,14 +104,209 @@ class NumberRankingTopRescueTrainer(NumberRankingRescueTrainer):
             before = len(method_pool)
             method_pool = self.dedupe_methods([*method_pool, *rescue_methods])
             for method in rescue_methods:
-                # Stronger boost than missing-number rescue because the failure is ranking-related:
-                # these methods already have independent support, but were not represented in Top-N.
-                method_scores.setdefault(self.method_key(method), float(max(1, method.fit_match_count)) + 10.0)
+                boost = 25.0 if method.method_type == "edge_rescue" else 10.0
+                method_scores.setdefault(self.method_key(method), float(max(1, method.fit_match_count)) + boost)
             if len(method_pool) <= before:
                 break
 
         assert best_eval is not None
         return best_eval.result, best_eval.survivors, best_eval.method_scores
+
+    def learn_rescue_methods(
+        self,
+        history: Sequence[Draw],
+        target_values: tuple[int, ...],
+        missing_values: tuple[int, ...],
+        *,
+        attempt: RescueAttemptConfig,
+        way_top: int,
+    ) -> list[LearnedMethod]:
+        """Learn normal rescue methods, then add boundary-specific methods when needed."""
+        methods = list(
+            super().learn_rescue_methods(
+                history,
+                target_values,
+                missing_values,
+                attempt=attempt,
+                way_top=way_top,
+            )
+        )
+        edge_methods = self.edge_rescue_methods(
+            history,
+            target_values,
+            missing_values,
+            top_k=way_top,
+        )
+        return self.dedupe_methods([*methods, *edge_methods])
+
+    def edge_rescue_methods(
+        self,
+        draws: Sequence[Draw],
+        target_values: tuple[int, ...],
+        rescue_values: tuple[int, ...],
+        *,
+        top_k: int,
+    ) -> list[LearnedMethod]:
+        methods: list[LearnedMethod] = []
+        rescue_set = set(rescue_values)
+        now = datetime.now().isoformat(timespec="seconds")
+        labels: list[str] = []
+        if rescue_set & {1, 2, 3, 4, 5}:
+            labels.extend([
+                "EdgeRescue|low|width=3",
+                "EdgeRescue|low|width=5",
+                "EdgeRescue|low|width=7",
+            ])
+        if rescue_set & {41, 42, 43, 44, 45}:
+            labels.extend([
+                "EdgeRescue|high|width=3",
+                "EdgeRescue|high|width=5",
+                "EdgeRescue|high|width=7",
+            ])
+        for label in labels:
+            signal_values = self.edge_rescue_values(draws, label, top_k=top_k)
+            matched = tuple(sorted(set(signal_values) & set(target_values)))
+            if not (set(signal_values) & rescue_set):
+                continue
+            methods.append(
+                LearnedMethod(
+                    method_type="edge_rescue",
+                    label=label,
+                    configs=tuple(),
+                    top_k=top_k,
+                    fit_signal_values=signal_values,
+                    fit_target_values=target_values,
+                    fit_matched_values=matched,
+                    fit_score=len(matched) * 2500 + len(set(signal_values) & rescue_set) * 3000,
+                    saved_at=now,
+                )
+            )
+        return methods
+
+    def signal_values_from_method(
+        self,
+        draws: Sequence[Draw],
+        method: LearnedMethod,
+        *,
+        top_k: int,
+    ) -> tuple[int, ...]:
+        if method.method_type == "edge_rescue":
+            return self.edge_rescue_values(draws, method.label, top_k=top_k)
+        return self.engine.signal_values_from_method(draws, method, top_k=top_k)
+
+    def edge_rescue_values(self, draws: Sequence[Draw], label: str, *, top_k: int) -> tuple[int, ...]:
+        parts = self.parse_edge_label(label)
+        side = parts.get("side", "low")
+        width = int(parts.get("width", "5"))
+        if side == "high":
+            primary = list(range(45, max(0, 45 - width), -1))
+        else:
+            primary = list(range(1, min(45, width) + 1))
+
+        freq: Counter[int] = Counter()
+        for draw in list(draws)[-80:]:
+            for value in draw.numbers:
+                freq[int(value)] += 1
+        fill = sorted(
+            (value for value in range(1, 46) if value not in set(primary)),
+            key=lambda value: (freq[value], value),
+            reverse=True,
+        )
+        result = [*primary, *fill]
+        return tuple(result[:top_k])
+
+    @staticmethod
+    def parse_edge_label(label: str) -> dict[str, str]:
+        chunks = label.split("|")
+        result: dict[str, str] = {"side": chunks[1] if len(chunks) > 1 else "low"}
+        for chunk in chunks[2:]:
+            if "=" not in chunk:
+                continue
+            key, value = chunk.split("=", 1)
+            result[key] = value
+        return result
+
+    def methods_that_pull_value(
+        self,
+        methods: Sequence[LearnedMethod],
+        draws: Sequence[Draw],
+        value: int,
+        *,
+        way_top: int,
+    ) -> list[LearnedMethod]:
+        result: list[LearnedMethod] = []
+        for method in methods:
+            values = self.signal_values_from_method(draws, method, top_k=way_top)
+            if value in set(values):
+                result.append(method)
+        return self.dedupe_methods(result)
+
+    def rank_signal_values(
+        self,
+        draws: Sequence[Draw],
+        methods: Sequence[LearnedMethod],
+        *,
+        method_scores: dict[tuple[object, ...], float],
+        ranking_mode: str,
+        top_k: int,
+        way_top: int,
+    ) -> tuple[int, ...]:
+        counts: Counter[int] = Counter()
+        scores: defaultdict[int, float] = defaultdict(float)
+        first_seen_rank: dict[int, int] = {}
+        for method_index, method in enumerate(methods):
+            values = self.signal_values_from_method(draws, method, top_k=way_top)
+            base_score = method_scores.get(self.method_key(method), float(max(1, method.fit_match_count)))
+            if method.method_type == "edge_rescue":
+                base_score *= 1.35
+            for rank, value in enumerate(values, 1):
+                counts[value] += 1
+                first_seen_rank[value] = min(first_seen_rank.get(value, rank), rank)
+                if ranking_mode == "vote":
+                    value_score = 1.0
+                elif ranking_mode == "weighted":
+                    value_score = base_score * (way_top - rank + 1)
+                elif ranking_mode == "ranked_vote":
+                    value_score = way_top - rank + 1
+                elif ranking_mode == "recent_score":
+                    value_score = (base_score + method_index + 1) / rank
+                elif ranking_mode == "coverage_balanced":
+                    value_score = (way_top - rank + 1) / max(1.0, counts[value] ** 0.35)
+                elif ranking_mode == "missing_first":
+                    value_score = base_score * ((way_top - rank + 1) / way_top) / max(1.0, counts[value] ** 0.15)
+                else:
+                    value_score = 1.0
+                scores[value] += value_score
+        ranked = sorted(
+            counts,
+            key=lambda value: (scores[value], counts[value], -first_seen_rank.get(value, way_top + 1), value),
+            reverse=True,
+        )
+        return tuple(ranked[:top_k])
+
+    def update_method_scores(
+        self,
+        draws: Sequence[Draw],
+        methods: Sequence[LearnedMethod],
+        target: tuple[int, ...],
+        *,
+        method_scores: dict[tuple[object, ...], float],
+        way_top: int,
+        step_index: int,
+    ) -> None:
+        target_set = set(target)
+        recency_bonus = 1.0 + step_index / 10.0
+        for method in methods:
+            key = self.method_key(method)
+            values = self.signal_values_from_method(draws, method, top_k=way_top)
+            hits = target_set & set(values)
+            if not hits:
+                method_scores[key] = method_scores.get(key, 1.0) * 0.95
+                continue
+            best_rank = min(values.index(value) + 1 for value in hits)
+            rank_bonus = (way_top - best_rank + 1) / way_top
+            edge_bonus = 1.5 if method.method_type == "edge_rescue" else 0.0
+            method_scores[key] = method_scores.get(key, 1.0) + recency_bonus + rank_bonus + len(hits) * 0.25 + edge_bonus
 
     @staticmethod
     def rescue_values_for_failure(evaluation) -> tuple[int, ...]:

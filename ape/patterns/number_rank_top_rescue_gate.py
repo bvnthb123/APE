@@ -1,13 +1,15 @@
 """Top-hit rescue wrapper for the number ranking rescue lab.
 
 This module keeps the missing-number rescue behavior from number_rank_rescue_gate
-and adds two extra repair paths:
+and adds three extra repair paths:
 
 * Top rescue: when all target numbers have independent ways but the public Top-N
   ranking misses the target row, learn extra methods for the failed row.
 * Edge rescue: when boundary values such as 01/02/44/45 disappear from the
   survivor chain, inject explicit low/high edge methods and let the walkback
   gate decide whether they survive.
+* Band rescue: when a mid-range value such as 35 disappears from the survivor
+  chain, inject local-range and zone-range methods around that missing value.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from ape.patterns.number_rank_rescue_gate import (
 
 
 class NumberRankingTopRescueTrainer(NumberRankingRescueTrainer):
-    """Ranking rescue trainer with Top-hit and boundary-number rescue paths."""
+    """Ranking rescue trainer with Top-hit, boundary-number and band rescue paths."""
 
     def run_mode_with_rescue(
         self,
@@ -104,7 +106,12 @@ class NumberRankingTopRescueTrainer(NumberRankingRescueTrainer):
             before = len(method_pool)
             method_pool = self.dedupe_methods([*method_pool, *rescue_methods])
             for method in rescue_methods:
-                boost = 25.0 if method.method_type == "edge_rescue" else 10.0
+                if method.method_type == "edge_rescue":
+                    boost = 25.0
+                elif method.method_type == "band_rescue":
+                    boost = 22.0
+                else:
+                    boost = 10.0
                 method_scores.setdefault(self.method_key(method), float(max(1, method.fit_match_count)) + boost)
             if len(method_pool) <= before:
                 break
@@ -121,7 +128,7 @@ class NumberRankingTopRescueTrainer(NumberRankingRescueTrainer):
         attempt: RescueAttemptConfig,
         way_top: int,
     ) -> list[LearnedMethod]:
-        """Learn normal rescue methods, then add boundary-specific methods when needed."""
+        """Learn normal rescue methods, then add boundary and band-specific methods."""
         methods = list(
             super().learn_rescue_methods(
                 history,
@@ -137,7 +144,13 @@ class NumberRankingTopRescueTrainer(NumberRankingRescueTrainer):
             missing_values,
             top_k=way_top,
         )
-        return self.dedupe_methods([*methods, *edge_methods])
+        band_methods = self.band_rescue_methods(
+            history,
+            target_values,
+            missing_values,
+            top_k=way_top,
+        )
+        return self.dedupe_methods([*methods, *edge_methods, *band_methods])
 
     def edge_rescue_methods(
         self,
@@ -183,6 +196,54 @@ class NumberRankingTopRescueTrainer(NumberRankingRescueTrainer):
             )
         return methods
 
+    def band_rescue_methods(
+        self,
+        draws: Sequence[Draw],
+        target_values: tuple[int, ...],
+        rescue_values: tuple[int, ...],
+        *,
+        top_k: int,
+    ) -> list[LearnedMethod]:
+        """Create local and zone-band methods for non-edge missing values."""
+        methods: list[LearnedMethod] = []
+        rescue_set = set(rescue_values)
+        now = datetime.now().isoformat(timespec="seconds")
+        labels: list[str] = []
+        for value in sorted(rescue_set):
+            if 1 <= value <= 45:
+                labels.extend(
+                    [
+                        f"BandRescue|around|center={value}|radius=3",
+                        f"BandRescue|around|center={value}|radius=5",
+                        f"BandRescue|around|center={value}|radius=8",
+                    ]
+                )
+                if value <= 15:
+                    labels.append("BandRescue|zone|start=1|end=15")
+                elif value <= 30:
+                    labels.append("BandRescue|zone|start=16|end=30")
+                else:
+                    labels.append("BandRescue|zone|start=31|end=45")
+        for label in dict.fromkeys(labels):
+            signal_values = self.band_rescue_values(draws, label, top_k=top_k)
+            matched = tuple(sorted(set(signal_values) & set(target_values)))
+            if not (set(signal_values) & rescue_set):
+                continue
+            methods.append(
+                LearnedMethod(
+                    method_type="band_rescue",
+                    label=label,
+                    configs=tuple(),
+                    top_k=top_k,
+                    fit_signal_values=signal_values,
+                    fit_target_values=target_values,
+                    fit_matched_values=matched,
+                    fit_score=len(matched) * 2400 + len(set(signal_values) & rescue_set) * 2800,
+                    saved_at=now,
+                )
+            )
+        return methods
+
     def signal_values_from_method(
         self,
         draws: Sequence[Draw],
@@ -192,21 +253,20 @@ class NumberRankingTopRescueTrainer(NumberRankingRescueTrainer):
     ) -> tuple[int, ...]:
         if method.method_type == "edge_rescue":
             return self.edge_rescue_values(draws, method.label, top_k=top_k)
+        if method.method_type == "band_rescue":
+            return self.band_rescue_values(draws, method.label, top_k=top_k)
         return self.engine.signal_values_from_method(draws, method, top_k=top_k)
 
     def edge_rescue_values(self, draws: Sequence[Draw], label: str, *, top_k: int) -> tuple[int, ...]:
-        parts = self.parse_edge_label(label)
-        side = parts.get("side", "low")
+        parts = self.parse_pipe_label(label)
+        side = parts.get("side", parts.get("kind", "low"))
         width = int(parts.get("width", "5"))
         if side == "high":
             primary = list(range(45, max(0, 45 - width), -1))
         else:
             primary = list(range(1, min(45, width) + 1))
 
-        freq: Counter[int] = Counter()
-        for draw in list(draws)[-80:]:
-            for value in draw.numbers:
-                freq[int(value)] += 1
+        freq = self.recent_frequency(draws, window=80)
         fill = sorted(
             (value for value in range(1, 46) if value not in set(primary)),
             key=lambda value: (freq[value], value),
@@ -215,16 +275,66 @@ class NumberRankingTopRescueTrainer(NumberRankingRescueTrainer):
         result = [*primary, *fill]
         return tuple(result[:top_k])
 
+    def band_rescue_values(self, draws: Sequence[Draw], label: str, *, top_k: int) -> tuple[int, ...]:
+        parts = self.parse_pipe_label(label)
+        kind = parts.get("kind", "around")
+        if kind == "zone":
+            start = int(parts.get("start", "1"))
+            end = int(parts.get("end", "45"))
+            band = list(range(max(1, start), min(45, end) + 1))
+            center = (start + end) / 2
+        else:
+            center_value = int(parts.get("center", "23"))
+            radius = int(parts.get("radius", "5"))
+            start = max(1, center_value - radius)
+            end = min(45, center_value + radius)
+            band = list(range(start, end + 1))
+            center = float(center_value)
+
+        freq = self.recent_frequency(draws, window=120)
+        gaps = self.gap_counts(draws)
+        scored: list[tuple[float, int]] = []
+        for value in band:
+            distance_score = max(0.0, 10.0 - abs(value - center))
+            score = distance_score * 3.0 + freq[value] * 1.4 + gaps.get(value, 0) * 0.08
+            scored.append((score, value))
+        primary = [value for _score, value in sorted(scored, key=lambda item: (item[0], item[1]), reverse=True)]
+        fill = sorted(
+            (value for value in range(1, 46) if value not in set(primary)),
+            key=lambda value: (freq[value], gaps.get(value, 0), value),
+            reverse=True,
+        )
+        return tuple([*primary, *fill][:top_k])
+
     @staticmethod
-    def parse_edge_label(label: str) -> dict[str, str]:
+    def parse_pipe_label(label: str) -> dict[str, str]:
         chunks = label.split("|")
-        result: dict[str, str] = {"side": chunks[1] if len(chunks) > 1 else "low"}
+        result: dict[str, str] = {"kind": chunks[1] if len(chunks) > 1 else ""}
+        # Preserve the old EdgeRescue side format: EdgeRescue|low|width=5.
+        if label.startswith("EdgeRescue|") and len(chunks) > 1:
+            result["side"] = chunks[1]
         for chunk in chunks[2:]:
             if "=" not in chunk:
                 continue
             key, value = chunk.split("=", 1)
             result[key] = value
         return result
+
+    @staticmethod
+    def recent_frequency(draws: Sequence[Draw], *, window: int) -> Counter[int]:
+        freq: Counter[int] = Counter()
+        for draw in list(draws)[-window:]:
+            for value in draw.numbers:
+                freq[int(value)] += 1
+        return freq
+
+    @staticmethod
+    def gap_counts(draws: Sequence[Draw]) -> dict[int, int]:
+        gaps = {value: len(draws) for value in range(1, 46)}
+        for offset, draw in enumerate(reversed(draws), 1):
+            for value in draw.numbers:
+                gaps[int(value)] = min(gaps[int(value)], offset)
+        return gaps
 
     def methods_that_pull_value(
         self,
@@ -257,7 +367,7 @@ class NumberRankingTopRescueTrainer(NumberRankingRescueTrainer):
         for method_index, method in enumerate(methods):
             values = self.signal_values_from_method(draws, method, top_k=way_top)
             base_score = method_scores.get(self.method_key(method), float(max(1, method.fit_match_count)))
-            if method.method_type == "edge_rescue":
+            if method.method_type in {"edge_rescue", "band_rescue"}:
                 base_score *= 1.35
             for rank, value in enumerate(values, 1):
                 counts[value] += 1
@@ -305,8 +415,8 @@ class NumberRankingTopRescueTrainer(NumberRankingRescueTrainer):
                 continue
             best_rank = min(values.index(value) + 1 for value in hits)
             rank_bonus = (way_top - best_rank + 1) / way_top
-            edge_bonus = 1.5 if method.method_type == "edge_rescue" else 0.0
-            method_scores[key] = method_scores.get(key, 1.0) + recency_bonus + rank_bonus + len(hits) * 0.25 + edge_bonus
+            rescue_bonus = 1.5 if method.method_type in {"edge_rescue", "band_rescue"} else 0.0
+            method_scores[key] = method_scores.get(key, 1.0) + recency_bonus + rank_bonus + len(hits) * 0.25 + rescue_bonus
 
     @staticmethod
     def rescue_values_for_failure(evaluation) -> tuple[int, ...]:

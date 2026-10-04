@@ -77,8 +77,7 @@ def main() -> int:
         ranking_modes=rank_modes,
         save_path=Path(args.save_path) if args.save_path else None,
     )
-    print("
-".join(result.to_lines()))
+    print("\n".join(result.to_lines()))
     return 0
 
 

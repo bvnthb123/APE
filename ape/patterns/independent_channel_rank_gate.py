@@ -265,7 +265,7 @@ class IndependentChannelRankingTrainer(NumberRankingTopRescueTrainer):
     ) -> list[list[LearnedMethod]]:
         return [
             self.methods_that_pull_value(
-                history, methods, value, way_top=way_top
+                methods, history, value, way_top=way_top
             )
             for value in first_target
         ]
